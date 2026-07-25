@@ -9,7 +9,20 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <button id="settingsButton" class="settings-button" aria-label="設定" style="display:none;">⚙️</button>
   <h1>暇時間即答</h1>
+
+  <div id="setupPanel" class="setup-panel" style="display:none;">
+    <p class="setup-desc">初回設定です。GASのWebアプリURLと共有シークレットを入力してください（この端末にのみ保存されます）。</p>
+    <label>GAS_ENDPOINT
+      <input id="setupEndpoint" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+    </label>
+    <label>SHARED_SECRET
+      <input id="setupSecret" type="text" placeholder="共有シークレット">
+    </label>
+    <button id="setupSave">保存</button>
+    <div id="setupError" class="setup-error"></div>
+  </div>
 
   <button id="micButton" class="mic-button" aria-label="音声入力">🎤</button>
   <div id="status" class="status">タップして話しかけてください</div>
@@ -22,8 +35,6 @@
   <div id="resultCard" class="result-card"></div>
   <button id="retryButton" class="retry-button">もう一度試す</button>
 
-  <script src="config.example.js"></script>
-  <script src="config.js" onerror="console.warn('config.js が見つかりません。config.example.js をコピーして作成してください。')"></script>
   <script src="app.js"></script>
 </body>
 </html>

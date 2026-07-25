@@ -1,4 +1,7 @@
 (function() {
+  var STORAGE_KEY = 'himajikanConfig';
+  var REQUEST_TIMEOUT_MS = 25000;
+
   var micButton = document.getElementById('micButton');
   var statusEl = document.getElementById('status');
   var resultCard = document.getElementById('resultCard');
@@ -6,12 +9,30 @@
   var textFallback = document.getElementById('textFallback');
   var textInput = document.getElementById('textInput');
   var textSubmit = document.getElementById('textSubmit');
+  var settingsButton = document.getElementById('settingsButton');
+  var setupPanel = document.getElementById('setupPanel');
+  var setupEndpoint = document.getElementById('setupEndpoint');
+  var setupSecret = document.getElementById('setupSecret');
+  var setupSave = document.getElementById('setupSave');
+  var setupError = document.getElementById('setupError');
 
-  var REQUEST_TIMEOUT_MS = 25000;
+  var currentConfig = loadConfig();
+  var speechSupported = true;
 
-  function isConfigured() {
-    var cfg = window.APP_CONFIG;
-    return !!(cfg && cfg.GAS_ENDPOINT && cfg.GAS_ENDPOINT.indexOf('XXXX') === -1);
+  function loadConfig() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      var cfg = JSON.parse(raw);
+      if (cfg && cfg.GAS_ENDPOINT && cfg.SHARED_SECRET) return cfg;
+      return null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveConfig(cfg) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
 
   function setStatus(text) {
@@ -30,9 +51,53 @@
     retryButton.style.display = 'none';
   }
 
+  function showSetupPanel() {
+    setupPanel.style.display = 'block';
+    micButton.style.display = 'none';
+    textFallback.style.display = 'none';
+    settingsButton.style.display = 'none';
+    hideResult();
+    setStatus('');
+    setupError.textContent = '';
+    if (currentConfig) {
+      setupEndpoint.value = currentConfig.GAS_ENDPOINT;
+      setupSecret.value = currentConfig.SHARED_SECRET;
+    }
+  }
+
+  function showMainUI() {
+    setupPanel.style.display = 'none';
+    settingsButton.style.display = 'inline-block';
+    if (speechSupported) {
+      micButton.style.display = '';
+      setStatus('タップして話しかけてください');
+    } else {
+      textFallback.style.display = 'flex';
+      setStatus('この端末は音声入力に対応していません。テキストで入力してください。');
+    }
+  }
+
+  setupSave.addEventListener('click', function() {
+    var endpoint = setupEndpoint.value.trim();
+    var secret = setupSecret.value.trim();
+    if (!endpoint || endpoint.indexOf('https://') !== 0) {
+      setupError.textContent = 'GAS_ENDPOINTには https:// から始まるURLを入力してください。';
+      return;
+    }
+    if (!secret) {
+      setupError.textContent = 'SHARED_SECRETを入力してください。';
+      return;
+    }
+    currentConfig = {GAS_ENDPOINT: endpoint, SHARED_SECRET: secret};
+    saveConfig(currentConfig);
+    showMainUI();
+  });
+
+  settingsButton.addEventListener('click', showSetupPanel);
+
   function sendToBackend(transcript) {
-    if (!isConfigured()) {
-      showResult('error', 'config.js が未設定です。config.example.js をコピーして GAS_ENDPOINT と SHARED_SECRET を設定してください。');
+    if (!currentConfig) {
+      showSetupPanel();
       return;
     }
 
@@ -42,11 +107,11 @@
     var controller = new AbortController();
     var timeoutId = setTimeout(function() { controller.abort(); }, REQUEST_TIMEOUT_MS);
 
-    fetch(window.APP_CONFIG.GAS_ENDPOINT, {
+    fetch(currentConfig.GAS_ENDPOINT, {
       method: 'POST',
       // GASのCORSプリフライト回避のため text/plain で送る（JSON文字列はそのままbodyに入れる）
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({transcript: transcript, secret: window.APP_CONFIG.SHARED_SECRET}),
+      body: JSON.stringify({transcript: transcript, secret: currentConfig.SHARED_SECRET}),
       signal: controller.signal
     })
       .then(function(res) { return res.json(); })
@@ -77,9 +142,12 @@
   function setupSpeechRecognition() {
     var SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionImpl) {
+      speechSupported = false;
       micButton.style.display = 'none';
-      textFallback.style.display = 'flex';
-      setStatus('この端末は音声入力に対応していません。テキストで入力してください。');
+      if (currentConfig) {
+        textFallback.style.display = 'flex';
+        setStatus('この端末は音声入力に対応していません。テキストで入力してください。');
+      }
       return;
     }
 
@@ -113,6 +181,10 @@
     };
 
     micButton.addEventListener('click', function() {
+      if (!currentConfig) {
+        showSetupPanel();
+        return;
+      }
       if (listening) {
         recognition.stop();
         return;
@@ -150,9 +222,17 @@
   });
 
   if (!window.isSecureContext) {
+    speechSupported = false;
+    micButton.style.display = 'none';
     setStatus('この機能はHTTPS環境が必要です。');
   } else {
     setupSpeechRecognition();
+  }
+
+  if (currentConfig) {
+    showMainUI();
+  } else {
+    showSetupPanel();
   }
 
   if ('serviceWorker' in navigator) {

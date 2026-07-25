@@ -21,6 +21,71 @@ h1 {
   text-align: center;
 }
 
+.settings-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.setup-panel {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.setup-desc {
+  margin: 0 0 16px;
+  font-size: 0.9rem;
+  color: #444;
+  line-height: 1.5;
+}
+
+.setup-panel label {
+  display: block;
+  font-size: 0.85rem;
+  color: #444;
+  margin-bottom: 12px;
+}
+
+.setup-panel input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.setup-panel button {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #2b6cb0;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.setup-error {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #c53030;
+  min-height: 1.2em;
+}
+
 .mic-button {
   width: 96px;
   height: 96px;

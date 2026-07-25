@@ -61,29 +61,29 @@ Apps Scriptエディタ → デプロイ → 新しいデプロイ → 種類「
 **注意**: `clasp push` はコードを更新するだけで、ライブの `/exec` エンドポイントには反映されない。
 コード変更のたびに `clasp deploy -i <デプロイID>`（またはエディタのデプロイ管理→編集→新バージョン）が必要。
 
-### 5. フロントエンド設定
-
-```bash
-cp docs/config.example.js docs/config.js
-```
-
-`docs/config.js` を編集し、`GAS_ENDPOINT`（手順4のURL）と `SHARED_SECRET`（手順2と同じ値）を設定する。
-このファイルはコミットされない（`.gitignore` 対象）。
-
-### 6. GitHub Pages
+### 5. GitHub Pages
 
 このリポジトリをGitHubにpushし、Settings → Pages で以下を設定する。
-- Source: Deploy from a branch
+- **Source: 「Deploy from a branch」を選ぶこと**（「GitHub Actions」を選ぶとワークフローファイルが無く
+  ビルドが永久に終わらないので注意）
 - Branch: `main` / `/docs`
-
-Actionsのビルドは不要（静的ファイルをそのまま配信）。
 
 リポジトリ名は英数字（例: `hima-jikan-pwa`）にすると `https://<user>.github.io/hima-jikan-pwa/` の
 ようなクリーンなURLになる。ローカルのフォルダ名（日本語）はそのままで問題ない。
 
+GitHub Pagesの無料枠はpublicリポジトリでしか使えない（privateはPro等の有料プランが必要）。
+
+### 6. フロントエンド初回設定（アプリ内）
+
+`docs/config.js` のようなシークレットを含むファイルはコミットしない設計にしているため、
+`GAS_ENDPOINT`（手順4のURL）と`SHARED_SECRET`（手順2と同じ値）はアプリを開いた端末で直接入力する。
+
+デプロイされたPages URLをスマホのChromeで開くと、初回は設定画面が自動で表示されるので、
+そこに`GAS_ENDPOINT`と`SHARED_SECRET`を入力して保存する。値はその端末の`localStorage`にのみ保存され、
+リポジトリやサーバーには一切送られない。あとから変更したい場合は画面右上の⚙️ボタンから再度開ける。
+
 ### 7. 動作確認
 
-デプロイされたPages URL（HTTPS）にスマホのChromeでアクセスし、
 1. インストールプロンプトが出るか
 2. マイクボタンで「〇〇さんと△△時から予定入れて」→ カレンダーに反映されるか
 3. マイクボタンで「来月どこが空いてる？」→ 期待した暇時間帯が返るか
@@ -93,8 +93,8 @@ Actionsのビルドは不要（静的ファイルをそのまま配信）。
 ## セキュリティ上の注意
 
 Web Appのアクセスは「Anyone」（Googleログイン不要）+ 共有シークレットという構成。実質的な認証ではないため、
-`docs/config.js`（実URL・実シークレットを含む）を絶対にコミットしないこと。可能であればリポジトリを
-privateにする。
+`SHARED_SECRET`は推測されにくいランダムな文字列にすること。`GAS_ENDPOINT`と`SHARED_SECRET`は各端末の
+`localStorage`にのみ保存され、リポジトリには一切含まれない。
 
 ## 開発メモ
 

@@ -1,9 +1,6 @@
 # clasp
 .clasprc.json
 
-# secrets
-docs/config.js
-
 # OS
 .DS_Store
 Thumbs.db
