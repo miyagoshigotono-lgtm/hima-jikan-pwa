@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>暇時間即答PWA</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2b6cb0">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>暇時間即答</h1>
+
+  <button id="micButton" class="mic-button" aria-label="音声入力">🎤</button>
+  <div id="status" class="status">タップして話しかけてください</div>
+
+  <div id="textFallback" class="text-fallback" style="display:none;">
+    <input id="textInput" type="text" placeholder="例: 来月どこが空いてる？">
+    <button id="textSubmit">送信</button>
+  </div>
+
+  <div id="resultCard" class="result-card"></div>
+  <button id="retryButton" class="retry-button">もう一度試す</button>
+
+  <script src="config.example.js"></script>
+  <script src="config.js" onerror="console.warn('config.js が見つかりません。config.example.js をコピーして作成してください。')"></script>
+  <script src="app.js"></script>
+</body>
+</html>
