@@ -1,5 +1,29 @@
 function doGet(e) {
+  var params = e.parameter || {};
+  if (params.action === 'calendarMonth') {
+    return handleCalendarMonth(params);
+  }
   return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+}
+
+function handleCalendarMonth(params) {
+  var sharedSecret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if (!sharedSecret || params.secret !== sharedSecret) {
+    return jsonOutput({status: 'error', message: '認証エラー'});
+  }
+  if (!params.start || !params.end) {
+    return jsonOutput({status: 'error', message: 'start/endパラメータが必要です'});
+  }
+  try {
+    var dayOffDates = CalendarService.fetchDayOffDates(
+      parseIsoDate(params.start),
+      parseIsoDate(addDays(params.end, 1))
+    );
+    return jsonOutput({status: 'ok', dayOffDates: dayOffDates});
+  } catch (err) {
+    console.error(err);
+    return jsonOutput({status: 'error', message: 'カレンダーの取得に失敗しました。'});
+  }
 }
 
 function doPost(e) {

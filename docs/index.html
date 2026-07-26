@@ -12,6 +12,18 @@
   <button id="settingsButton" class="settings-button" aria-label="設定" style="display:none;">⚙️</button>
   <h1>暇時間即答</h1>
 
+  <div id="calendarSection" class="calendar-section" style="display:none;">
+    <div class="calendar-header">
+      <button id="calPrev" class="cal-nav" aria-label="前の月">‹</button>
+      <div id="calMonthLabel" class="cal-month-label"></div>
+      <button id="calNext" class="cal-nav" aria-label="次の月">›</button>
+    </div>
+    <div class="calendar-weekdays">
+      <span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span>
+    </div>
+    <div id="calendarGrid" class="calendar-grid"></div>
+  </div>
+
   <div id="setupPanel" class="setup-panel" style="display:none;">
     <p class="setup-desc">初回設定です。GASのWebアプリURLと共有シークレットを入力してください（この端末にのみ保存されます）。</p>
     <label>GAS_ENDPOINT

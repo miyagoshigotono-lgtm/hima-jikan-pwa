@@ -15,9 +15,16 @@
   var setupSecret = document.getElementById('setupSecret');
   var setupSave = document.getElementById('setupSave');
   var setupError = document.getElementById('setupError');
+  var calendarSection = document.getElementById('calendarSection');
+  var calMonthLabel = document.getElementById('calMonthLabel');
+  var calendarGrid = document.getElementById('calendarGrid');
+  var calPrev = document.getElementById('calPrev');
+  var calNext = document.getElementById('calNext');
 
   var currentConfig = loadConfig();
   var speechSupported = true;
+  var calViewYear, calViewMonth;
+  var gridRangeStart, gridRangeEnd;
 
   function loadConfig() {
     try {
@@ -53,6 +60,7 @@
 
   function showSetupPanel() {
     setupPanel.style.display = 'block';
+    calendarSection.style.display = 'none';
     micButton.style.display = 'none';
     textFallback.style.display = 'none';
     settingsButton.style.display = 'none';
@@ -68,13 +76,16 @@
   function showMainUI() {
     setupPanel.style.display = 'none';
     settingsButton.style.display = 'inline-block';
+    calendarSection.style.display = 'block';
+    textFallback.style.display = 'flex';
     if (speechSupported) {
       micButton.style.display = '';
       setStatus('タップして話しかけてください');
     } else {
-      textFallback.style.display = 'flex';
-      setStatus('この端末は音声入力に対応していません。テキストで入力してください。');
+      micButton.style.display = 'none';
+      setStatus('テキストで入力してください。');
     }
+    fetchDayOffDates(gridRangeStart, gridRangeEnd);
   }
 
   setupSave.addEventListener('click', function() {
@@ -94,6 +105,82 @@
   });
 
   settingsButton.addEventListener('click', showSetupPanel);
+
+  function formatIso(d) {
+    var pad = function(n) { return ('0' + n).slice(-2); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function isSameDate(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function initCalendar() {
+    var now = new Date();
+    calViewYear = now.getFullYear();
+    calViewMonth = now.getMonth();
+    renderCalendar();
+  }
+
+  function renderCalendar() {
+    calMonthLabel.textContent = calViewYear + '年' + (calViewMonth + 1) + '月';
+
+    var firstOfMonth = new Date(calViewYear, calViewMonth, 1);
+    var lastOfMonth = new Date(calViewYear, calViewMonth + 1, 0);
+    var gridStart = new Date(firstOfMonth);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+    var gridEnd = new Date(lastOfMonth);
+    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+
+    gridRangeStart = gridStart;
+    gridRangeEnd = gridEnd;
+
+    var today = new Date();
+    calendarGrid.innerHTML = '';
+    var cursor = new Date(gridStart);
+    while (cursor <= gridEnd) {
+      var cell = document.createElement('div');
+      cell.className = 'cal-day';
+      if (cursor.getMonth() !== calViewMonth) cell.classList.add('other-month');
+      if (isSameDate(cursor, today)) cell.classList.add('today');
+      cell.textContent = cursor.getDate();
+      cell.dataset.date = formatIso(cursor);
+      calendarGrid.appendChild(cell);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    fetchDayOffDates(gridStart, gridEnd);
+  }
+
+  function fetchDayOffDates(rangeStart, rangeEnd) {
+    if (!currentConfig || !rangeStart || !rangeEnd) return;
+    var url = currentConfig.GAS_ENDPOINT +
+      '?action=calendarMonth&start=' + formatIso(rangeStart) + '&end=' + formatIso(rangeEnd) +
+      '&secret=' + encodeURIComponent(currentConfig.SHARED_SECRET);
+    fetch(url)
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (data.status !== 'ok') return;
+        var dayOffSet = {};
+        data.dayOffDates.forEach(function(d) { dayOffSet[d] = true; });
+        Array.prototype.forEach.call(calendarGrid.children, function(cell) {
+          if (dayOffSet[cell.dataset.date]) cell.classList.add('dayoff');
+        });
+      })
+      .catch(function(err) { console.error(err); });
+  }
+
+  calPrev.addEventListener('click', function() {
+    calViewMonth--;
+    if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+    renderCalendar();
+  });
+
+  calNext.addEventListener('click', function() {
+    calViewMonth++;
+    if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+    renderCalendar();
+  });
 
   function sendToBackend(transcript) {
     if (!currentConfig) {
@@ -144,10 +231,6 @@
     if (!SpeechRecognitionImpl) {
       speechSupported = false;
       micButton.style.display = 'none';
-      if (currentConfig) {
-        textFallback.style.display = 'flex';
-        setStatus('この端末は音声入力に対応していません。テキストで入力してください。');
-      }
       return;
     }
 
@@ -228,6 +311,8 @@
   } else {
     setupSpeechRecognition();
   }
+
+  initCalendar();
 
   if (currentConfig) {
     showMainUI();
