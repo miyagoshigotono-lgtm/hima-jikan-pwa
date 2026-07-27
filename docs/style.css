@@ -92,7 +92,7 @@ h1 {
   border-radius: 50%;
 }
 
-/* 24時間ダイヤル: 頂点が0時、時計回り。0-7時=紺 / 7-18時=橙 / 18-24時=白 */
+/* 外周リング = 24時間タイムライン。頂点が0時、時計回り。0-7時=紺 / 7-18時=橙 / 18-24時=白 */
 .cal-day-dial {
   width: 100%;
   height: 100%;
@@ -109,11 +109,13 @@ h1 {
   justify-content: center;
 }
 
+/* 中央部。不透明に塗ることで外周がリング状に見える */
 .cal-day-num {
-  width: 56%;
-  height: 56%;
+  width: 60%;
+  height: 60%;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -126,24 +128,25 @@ h1 {
 }
 
 .cal-day.today {
-  box-shadow: 0 0 0 2px #e53e3e;
+  box-shadow: 0 0 0 2px #2f855a;
 }
 
 .cal-day.today .cal-day-num {
   font-weight: bold;
-  color: #e53e3e;
 }
 
+/* 「休み」イベントがある日は中央部を赤くする（.today より後に置き、色の優先度で勝たせる） */
 .cal-day.dayoff .cal-day-num {
-  background: #2b6cb0;
+  background: #e53e3e;
   color: white;
   font-weight: bold;
 }
 
 .calendar-legend {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
+  gap: 6px 12px;
   margin-top: 10px;
   font-size: 0.7rem;
   color: #777;
@@ -165,6 +168,8 @@ h1 {
 .legend-swatch.night { background: #0f3b7c; }
 .legend-swatch.day { background: #fb7a00; }
 .legend-swatch.eve { background: #ffffff; }
+.legend-swatch.dayoff { background: #e53e3e; border-color: #e53e3e; }
+.legend-swatch.today { background: #fff; border: 2px solid #2f855a; }
 
 .setup-panel {
   width: 100%;
