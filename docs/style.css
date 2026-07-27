@@ -80,7 +80,7 @@ h1 {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 6px;
 }
 
 .cal-day {
@@ -88,8 +88,36 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  padding: 2px;
   border-radius: 50%;
+}
+
+/* 24時間ダイヤル: 頂点が0時、時計回り。0-7時=紺 / 7-18時=橙 / 18-24時=白 */
+.cal-day-dial {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1px solid #333;
+  background: #fff;
+  background: conic-gradient(
+    #0f3b7c 0deg 105deg,
+    #fb7a00 105deg 270deg,
+    #ffffff 270deg 360deg
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cal-day-num {
+  width: 56%;
+  height: 56%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
   color: #333;
 }
 
@@ -98,13 +126,45 @@ h1 {
 }
 
 .cal-day.today {
-  border: 2px solid #2b6cb0;
+  box-shadow: 0 0 0 2px #e53e3e;
 }
 
-.cal-day.dayoff {
+.cal-day.today .cal-day-num {
+  font-weight: bold;
+  color: #e53e3e;
+}
+
+.cal-day.dayoff .cal-day-num {
   background: #2b6cb0;
   color: white;
+  font-weight: bold;
 }
+
+.calendar-legend {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 0.7rem;
+  color: #777;
+}
+
+.calendar-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #999;
+}
+
+.legend-swatch.night { background: #0f3b7c; }
+.legend-swatch.day { background: #fb7a00; }
+.legend-swatch.eve { background: #ffffff; }
 
 .setup-panel {
   width: 100%;

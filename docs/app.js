@@ -143,8 +143,16 @@
       cell.className = 'cal-day';
       if (cursor.getMonth() !== calViewMonth) cell.classList.add('other-month');
       if (isSameDate(cursor, today)) cell.classList.add('today');
-      cell.textContent = cursor.getDate();
       cell.dataset.date = formatIso(cursor);
+
+      var dial = document.createElement('div');
+      dial.className = 'cal-day-dial';
+      var num = document.createElement('span');
+      num.className = 'cal-day-num';
+      num.textContent = cursor.getDate();
+      dial.appendChild(num);
+      cell.appendChild(dial);
+
       calendarGrid.appendChild(cell);
       cursor.setDate(cursor.getDate() + 1);
     }
