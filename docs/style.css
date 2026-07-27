@@ -168,6 +168,7 @@ h1 {
 .legend-swatch.night { background: #0f3b7c; }
 .legend-swatch.day { background: #fb7a00; }
 .legend-swatch.eve { background: #ffffff; }
+.legend-swatch.event { background: #805ad5; border-color: #805ad5; }
 .legend-swatch.dayoff { background: #e53e3e; border-color: #e53e3e; }
 .legend-swatch.today { background: #fff; border: 2px solid #2f855a; }
 
@@ -277,6 +278,12 @@ h1 {
 
 .result-card.clarify {
   border-left: 4px solid #d69e2e;
+}
+
+/* 予定の重複などで追加を見送った場合 */
+.result-card.rejected {
+  border-left: 4px solid #dd6b20;
+  background: #fffaf0;
 }
 
 .result-card.ok {

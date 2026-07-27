@@ -26,6 +26,18 @@
   var calViewYear, calViewMonth;
   var gridRangeStart, gridRangeEnd;
 
+  // 24時間リングの配色。0-7時=睡眠 / 7-18時=仕事 / 18-24時=自由、予定はその上を塗り替える
+  var DIAL_COLORS = {
+    sleep: '#0f3b7c',
+    work: '#fb7a00',
+    free: '#ffffff',
+    event: '#805ad5'
+  };
+  var SLEEP_END_MIN = 7 * 60;
+  var WORK_END_MIN = 18 * 60;
+  // 45px程度のセルでは30分の予定が7.5度しかなく視認できないため、最低幅を確保する
+  var MIN_EVENT_ARC_MIN = 24;
+
   function loadConfig() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -85,7 +97,7 @@
       micButton.style.display = 'none';
       setStatus('テキストで入力してください。');
     }
-    fetchDayOffDates(gridRangeStart, gridRangeEnd);
+    fetchMonthData(gridRangeStart, gridRangeEnd);
   }
 
   setupSave.addEventListener('click', function() {
@@ -157,10 +169,52 @@
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    fetchDayOffDates(gridStart, gridEnd);
+    fetchMonthData(gridStart, gridEnd);
   }
 
-  function fetchDayOffDates(rangeStart, rangeEnd) {
+  function baseIntervals(isDayOff) {
+    if (isDayOff) {
+      return [
+        {s: 0, e: SLEEP_END_MIN, c: DIAL_COLORS.sleep},
+        {s: SLEEP_END_MIN, e: 1440, c: DIAL_COLORS.free}
+      ];
+    }
+    return [
+      {s: 0, e: SLEEP_END_MIN, c: DIAL_COLORS.sleep},
+      {s: SLEEP_END_MIN, e: WORK_END_MIN, c: DIAL_COLORS.work},
+      {s: WORK_END_MIN, e: 1440, c: DIAL_COLORS.free}
+    ];
+  }
+
+  function overlayEvents(base, events) {
+    var result = base;
+    (events || []).forEach(function(ev) {
+      var s = ev.s;
+      var e = ev.e;
+      if (e - s < MIN_EVENT_ARC_MIN) e = Math.min(1440, s + MIN_EVENT_ARC_MIN);
+      var next = [];
+      result.forEach(function(seg) {
+        if (e <= seg.s || s >= seg.e) { next.push(seg); return; }
+        if (s > seg.s) next.push({s: seg.s, e: s, c: seg.c});
+        if (e < seg.e) next.push({s: e, e: seg.e, c: seg.c});
+      });
+      next.push({s: s, e: e, c: DIAL_COLORS.event});
+      next.sort(function(a, b) { return a.s - b.s; });
+      result = next;
+    });
+    return result;
+  }
+
+  function toConicGradient(intervals) {
+    var parts = intervals.map(function(seg) {
+      var a1 = (seg.s / 1440) * 360;
+      var a2 = (seg.e / 1440) * 360;
+      return seg.c + ' ' + a1.toFixed(2) + 'deg ' + a2.toFixed(2) + 'deg';
+    });
+    return 'conic-gradient(' + parts.join(', ') + ')';
+  }
+
+  function fetchMonthData(rangeStart, rangeEnd) {
     if (!currentConfig || !rangeStart || !rangeEnd) return;
     var url = currentConfig.GAS_ENDPOINT +
       '?action=calendarMonth&start=' + formatIso(rangeStart) + '&end=' + formatIso(rangeEnd) +
@@ -170,9 +224,18 @@
       .then(function(data) {
         if (data.status !== 'ok') return;
         var dayOffSet = {};
-        data.dayOffDates.forEach(function(d) { dayOffSet[d] = true; });
+        (data.dayOffDates || []).forEach(function(d) { dayOffSet[d] = true; });
+        var eventsByDate = data.events || {};
         Array.prototype.forEach.call(calendarGrid.children, function(cell) {
-          if (dayOffSet[cell.dataset.date]) cell.classList.add('dayoff');
+          var date = cell.dataset.date;
+          var isDayOff = !!dayOffSet[date];
+          if (isDayOff) cell.classList.add('dayoff');
+          var dial = cell.querySelector('.cal-day-dial');
+          if (dial) {
+            dial.style.background = toConicGradient(
+              overlayEvents(baseIntervals(isDayOff), eventsByDate[date])
+            );
+          }
         });
       })
       .catch(function(err) { console.error(err); });
@@ -189,6 +252,13 @@
     if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
     renderCalendar();
   });
+
+  function speak(text) {
+    if (!window.speechSynthesis) return;
+    var utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    window.speechSynthesis.speak(utterance);
+  }
 
   function sendToBackend(transcript) {
     if (!currentConfig) {
@@ -215,11 +285,12 @@
         setStatus('タップして話しかけてください');
         if (data.status === 'ok') {
           showResult('ok', data.message);
-          if (window.speechSynthesis) {
-            var utterance = new SpeechSynthesisUtterance(data.message);
-            utterance.lang = 'ja-JP';
-            window.speechSynthesis.speak(utterance);
-          }
+          speak(data.message);
+          // 予定が増えたのでカレンダーのリングを描き直す
+          if (data.type === 'add_event') fetchMonthData(gridRangeStart, gridRangeEnd);
+        } else if (data.status === 'rejected') {
+          showResult('rejected', data.message);
+          speak(data.message);
         } else if (data.status === 'clarify') {
           showResult('clarify', data.message);
         } else {

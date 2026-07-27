@@ -1,11 +1,8 @@
 var CalendarService = {
+  // start/end は Date。時刻の決定は呼び出し側（Code.js）が済ませておく
   createCalendarEvent: function(fields) {
     var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
-    var start = new Date(fields.startDateTime);
-    var end = fields.endDateTime
-      ? new Date(fields.endDateTime)
-      : new Date(start.getTime() + CONFIG.DEFAULT_EVENT_DURATION_MIN * 60000);
-    return cal.createEvent(fields.title, start, end, {
+    return cal.createEvent(fields.title, fields.start, fields.end, {
       location: fields.location || '',
       description: fields.notes || ''
     });
@@ -20,6 +17,33 @@ var CalendarService = {
     var unique = Array.from(new Set(dates));
     unique.sort();
     return unique;
+  },
+
+  // 時間指定の予定を日付ごとに分割し {'yyyy-MM-dd': [{s: 開始分, e: 終了分, t: タイトル}, ...]} で返す。
+  // 日をまたぐ予定は日境界で分割する（カレンダーUIが1日=1円として描画するため）
+  fetchTimedEventsByDate: function(rangeStart, rangeEnd) {
+    var events = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID).getEvents(rangeStart, rangeEnd);
+    var byDate = {};
+    events
+      .filter(function(e) { return !e.isAllDayEvent(); })
+      .forEach(function(e) {
+        var end = e.getEndTime();
+        var cursor = new Date(e.getStartTime());
+        while (cursor < end) {
+          var nextMidnight = new Date(cursor);
+          nextMidnight.setHours(24, 0, 0, 0);
+          var segEnd = end < nextMidnight ? end : nextMidnight;
+          var startMin = minutesOfDay(cursor);
+          var endMin = (segEnd.getTime() === nextMidnight.getTime()) ? 1440 : minutesOfDay(segEnd);
+          if (endMin > startMin) {
+            var key = Utilities.formatDate(cursor, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+            if (!byDate[key]) byDate[key] = [];
+            byDate[key].push({s: startMin, e: endMin, t: e.getTitle()});
+          }
+          cursor = nextMidnight;
+        }
+      });
+    return byDate;
   },
 
   // 「休み」以外の終日予定は無視し、時間指定の予定のみを対象にする
