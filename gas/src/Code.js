@@ -82,6 +82,10 @@ function handleRequest(transcript) {
     return handleDeleteEvent(extraction.deleteEvent || {}, transcript);
   }
 
+  if (extraction.intent === 'update_event') {
+    return handleUpdateEvent(extraction.updateEvent || {}, transcript);
+  }
+
   if (extraction.intent === 'query_free_evenings') {
     if (!extraction.freeEveningsQuery || !extraction.freeEveningsQuery.periodStart || !extraction.freeEveningsQuery.periodEnd) {
       return {status: 'clarify', message: 'いつからいつまでの範囲か、もう少し詳しく教えてください。'};
@@ -184,8 +188,9 @@ function handleAddEvent(fields) {
   }
 }
 
-// 確認を挟まず即削除する。ただし発話がどれを指すか特定できない場合だけは候補を返して聞き直してもらう
-function handleDeleteEvent(fields, transcript) {
+// 削除・変更で共通の「どの予定を指しているか」の特定。
+// 特定できたら {event, label} を、できなければそのまま返せる {response} を返す
+function resolveTargetEvent(fields, transcript, type, actionNoun) {
   var todayIso = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
   var searchFrom = fields.date || todayIso;
   var searchTo = fields.date ? addDays(fields.date, 1) : addDays(todayIso, CONFIG.DELETE_SEARCH_DAYS);
@@ -199,12 +204,15 @@ function handleDeleteEvent(fields, transcript) {
     );
   } catch (err) {
     console.error(err);
-    return {status: 'error', message: 'カレンダーの取得に失敗しました。もう一度お試しください。'};
+    return {response: {status: 'error', message: 'カレンダーの取得に失敗しました。もう一度お試しください。'}};
   }
 
   var where = fields.date ? formatDateJa(fields.date) + 'に' : 'これから先に';
   if (!candidates.length) {
-    return {status: 'rejected', type: 'delete_event', message: where + '削除できる予定はありませんでした。'};
+    return {response: {
+      status: 'rejected', type: type,
+      message: where + actionNoun + 'できる予定はありませんでした。'
+    }};
   }
 
   var labels = candidates.map(function(e) {
@@ -215,30 +223,113 @@ function handleDeleteEvent(fields, transcript) {
 
   var index;
   try {
-    index = IntentService.pickEventToDelete(transcript, labels);
+    index = IntentService.pickTargetEvent(transcript, labels);
   } catch (err) {
     console.error(err);
-    return {status: 'error', message: '削除する予定の特定に失敗しました。もう一度お試しください。'};
+    return {response: {status: 'error', message: '対象の予定の特定に失敗しました。もう一度お試しください。'}};
   }
 
   if (index < 0 || index >= candidates.length) {
-    return {
-      status: 'rejected',
-      type: 'delete_event',
+    return {response: {
+      status: 'rejected', type: type,
       message: 'どの予定か特定できませんでした。候補は次の通りです。\n' + labels.join('\n')
-    };
+    }};
   }
 
-  var target = candidates[index];
-  var label = labels[index];
+  return {event: candidates[index], label: labels[index]};
+}
+
+// 確認を挟まず即削除する。ただし発話がどれを指すか特定できない場合だけは候補を返して聞き直してもらう
+function handleDeleteEvent(fields, transcript) {
+  var resolved = resolveTargetEvent(fields, transcript, 'delete_event', '削除');
+  if (resolved.response) return resolved.response;
+
   try {
-    target.deleteEvent();
+    resolved.event.deleteEvent();
   } catch (err) {
     console.error(err);
     return {status: 'error', message: '予定の削除に失敗しました。もう一度お試しください。'};
   }
 
-  return {status: 'ok', type: 'delete_event', message: label + ' を削除しました。'};
+  return {status: 'ok', type: 'delete_event', message: resolved.label + ' を削除しました。'};
+}
+
+function handleUpdateEvent(fields, transcript) {
+  var resolved = resolveTargetEvent(fields, transcript, 'update_event', '変更');
+  if (resolved.response) return resolved.response;
+
+  var target = resolved.event;
+  var beforeLabel = resolved.label;
+
+  var originalDate = Utilities.formatDate(target.getStartTime(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  var originalStart = minutesOfDay(target.getStartTime());
+  var originalDuration = minutesOfDay(target.getEndTime()) - originalStart;
+
+  var timeChanged = !!(fields.newDate || fields.newStartTime || fields.newEndTime);
+  if (!timeChanged && !fields.newTitle) {
+    return {status: 'clarify', message: '何をどう変更するか、もう少し詳しく教えてください。'};
+  }
+
+  var newDate = fields.newDate || originalDate;
+  var startMin = fields.newStartTime ? parseHhMm(fields.newStartTime) : originalStart;
+  var endMin;
+  if (fields.newEndTime) {
+    endMin = parseHhMm(fields.newEndTime);
+  } else if (fields.newStartTime) {
+    endMin = startMin + originalDuration; // 開始だけずらした場合は所要時間を保つ
+  } else {
+    endMin = startMin + originalDuration;
+  }
+  if (endMin <= startMin) endMin = startMin + CONFIG.DEFAULT_EVENT_DURATION_MIN;
+
+  if (timeChanged) {
+    var isDayOff, others;
+    try {
+      var dayStart = parseIsoDate(newDate);
+      var dayEnd = parseIsoDate(addDays(newDate, 1));
+      isDayOff = CalendarService.fetchDayOffDates(dayStart, dayEnd).indexOf(newDate) !== -1;
+      // 変更対象自身は衝突判定から外す。外さないと時間を延ばすだけで自分自身と衝突して弾かれる
+      others = (CalendarService.fetchTimedEventsByDate(dayStart, dayEnd)[newDate] || [])
+        .filter(function(ev) { return ev.i !== target.getId(); });
+    } catch (err) {
+      console.error(err);
+      return {status: 'error', message: 'カレンダーの取得に失敗しました。もう一度お試しください。'};
+    }
+
+    var conflicts = Scheduling.findConflicts(isDayOff, others, startMin, endMin);
+    if (conflicts.work) {
+      return {
+        status: 'rejected', type: 'update_event',
+        message: formatDateJa(newDate) + 'は仕事です（' + CONFIG.WORK_START_HOUR + '時〜' +
+          CONFIG.WORK_END_HOUR + '時）。変更していません。'
+      };
+    }
+    if (conflicts.events.length) {
+      var names = conflicts.events.map(function(ev) { return '「' + ev.t + '」'; }).join('、');
+      return {
+        status: 'rejected', type: 'update_event',
+        message: formatDateJa(newDate) + ' ' + formatMinutes(startMin) + 'は' + names +
+          'が入っています。変更していません。'
+      };
+    }
+  }
+
+  try {
+    if (timeChanged) {
+      target.setTime(minutesToDate(newDate, startMin), minutesToDate(newDate, endMin));
+    }
+    if (fields.newTitle) target.setTitle(fields.newTitle);
+  } catch (err) {
+    console.error(err);
+    return {status: 'error', message: '予定の変更に失敗しました。もう一度お試しください。'};
+  }
+
+  var afterLabel = formatDateJa(newDate) + ' ' + formatMinutes(startMin) + '〜' + formatMinutes(endMin) +
+    ' ' + (fields.newTitle || target.getTitle());
+  return {
+    status: 'ok', type: 'update_event',
+    message: beforeLabel + '\n→ ' + afterLabel + '\nに変更しました。'
+  };
 }
 
 // 期間内の各日について、仕事終わり（18:00〜22:00）の空きを返す

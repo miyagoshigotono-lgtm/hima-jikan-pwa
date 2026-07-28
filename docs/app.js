@@ -376,8 +376,8 @@
         if (data.status === 'ok') {
           showResult('ok', data.message);
           speak(data.message);
-          // 予定が増減したのでカレンダーを描き直す
-          if (data.type === 'add_event' || data.type === 'delete_event') {
+          // 予定が変わったのでカレンダーを描き直す
+          if (data.type === 'add_event' || data.type === 'delete_event' || data.type === 'update_event') {
             fetchMonthData(gridRangeStart, gridRangeEnd);
           }
         } else if (data.status === 'rejected') {

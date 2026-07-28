@@ -19,7 +19,7 @@ var CalendarService = {
     return unique;
   },
 
-  // 時間指定の予定を日付ごとに分割し {'yyyy-MM-dd': [{s: 開始分, e: 終了分, t: タイトル}, ...]} で返す。
+  // 時間指定の予定を日付ごとに分割し {'yyyy-MM-dd': [{s: 開始分, e: 終了分, t: タイトル, i: ID}, ...]} で返す。
   // 日をまたぐ予定は日境界で分割する（カレンダーUIが1日=1円として描画するため）
   fetchTimedEventsByDate: function(rangeStart, rangeEnd) {
     var events = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID).getEvents(rangeStart, rangeEnd);
@@ -38,7 +38,7 @@ var CalendarService = {
           if (endMin > startMin) {
             var key = Utilities.formatDate(cursor, CONFIG.TIMEZONE, 'yyyy-MM-dd');
             if (!byDate[key]) byDate[key] = [];
-            byDate[key].push({s: startMin, e: endMin, t: e.getTitle()});
+            byDate[key].push({s: startMin, e: endMin, t: e.getTitle(), i: e.getId()});
           }
           cursor = nextMidnight;
         }

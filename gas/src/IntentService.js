@@ -13,6 +13,8 @@ var IntentService = {
       '   例:「今週の平日で予定が空いてる日は？」「仕事終わりが空いてる日は？」\n' +
       '4. 予定削除（delete_event）: 登録済みの予定を消したい\n' +
       '   例:「8月1日の会食を削除して」「大ちゃんと遊ぶ予定を消して」「金曜の飲み会キャンセルになった」\n' +
+      '5. 予定変更（update_event）: 登録済みの予定の日時やタイトルを変えたい\n' +
+      '   例:「大ちゃんと遊ぶ予定を18〜22時に変更」「8月1日の会食を8月3日に移動」「飲み会のタイトルを歓迎会にして」\n' +
       '意図、または必須項目（予定追加ならタイトルと日付、照会なら対象期間）が発話から確実に読み取れない場合は、' +
       '無理に推測せず intent を "unclear" とし、clarificationNeeded に確認したい内容を日本語の質問文で書いてください。\n' +
       '\n' +
@@ -27,14 +29,21 @@ var IntentService = {
       '\n' +
       '【予定削除の重要な注意】\n' +
       'date は発話に日付が含まれる場合のみ yyyy-MM-dd で埋め、含まれない場合は null にしてください。\n' +
-      'startTime も発話に時刻が含まれる場合のみ "HH:mm" で埋めてください。';
+      'startTime も発話に時刻が含まれる場合のみ "HH:mm" で埋めてください。\n' +
+      '\n' +
+      '【予定変更の重要な注意】\n' +
+      'updateEvent では「どの予定か」と「何に変えるか」を区別してください。\n' +
+      'date / startTime は変更対象を絞り込むための現在の値です（発話に含まれる場合のみ埋める）。\n' +
+      'newDate / newStartTime / newEndTime / newTitle が変更後の値です。変更しない項目は必ず null にしてください。\n' +
+      '例:「大ちゃんと遊ぶ予定を18〜22時に変更」→ date=null, newStartTime="18:00", newEndTime="22:00"\n' +
+      '例:「8月1日の会食を8月3日に移動」→ date="2026-08-01", newDate="2026-08-03", newStartTime=null';
 
     var responseSchema = {
       type: 'OBJECT',
       properties: {
         intent: {
           type: 'STRING',
-          enum: ['add_event', 'query_free_time', 'query_free_evenings', 'delete_event', 'unclear']
+          enum: ['add_event', 'query_free_time', 'query_free_evenings', 'delete_event', 'update_event', 'unclear']
         },
         clarificationNeeded: {type: 'STRING', nullable: true},
         addEvent: {
@@ -79,6 +88,18 @@ var IntentService = {
             date: {type: 'STRING', nullable: true},
             startTime: {type: 'STRING', nullable: true}
           }
+        },
+        updateEvent: {
+          type: 'OBJECT',
+          nullable: true,
+          properties: {
+            date: {type: 'STRING', nullable: true},
+            startTime: {type: 'STRING', nullable: true},
+            newDate: {type: 'STRING', nullable: true},
+            newStartTime: {type: 'STRING', nullable: true},
+            newEndTime: {type: 'STRING', nullable: true},
+            newTitle: {type: 'STRING', nullable: true}
+          }
         }
       },
       required: ['intent']
@@ -87,11 +108,11 @@ var IntentService = {
     return GeminiClient.call(systemInstruction, transcript, responseSchema);
   },
 
-  // 削除候補のうち、発話が指しているものを選ばせる。
+  // 候補のうち発話が指しているものを選ばせる（削除・変更で共用）。
   // 「会食」と「社長と水金部長とご飯」のように文字列一致しないケースがあるため文字列照合では足りない
-  pickEventToDelete: function(transcript, candidates) {
+  pickTargetEvent: function(transcript, candidates) {
     var systemInstruction =
-      'ユーザーはカレンダーの予定を削除しようとしています。以下は削除候補の一覧です。\n' +
+      'ユーザーはカレンダーの予定を操作（削除または変更）しようとしています。以下は候補の一覧です。\n' +
       candidates.map(function(c, i) { return i + ': ' + c; }).join('\n') + '\n\n' +
       'ユーザーの発話が指している予定の番号を matchIndex に入れてください。' +
       '発話とタイトルは表現が違うことがあります（例:「会食」と「社長と部長とご飯」は同じ予定を指します）。' +
