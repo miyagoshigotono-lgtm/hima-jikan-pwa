@@ -30,12 +30,13 @@
   var selectedDate = null;
   var WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
-  // 24時間リングの配色。0-7時=睡眠 / 7-18時=仕事 / 18-24時=自由、予定はその上を塗り替える
+  // 0-7時=睡眠 / 7-18時=仕事 / 18-24時=自由、予定はその上を塗り替える。
+  // 睡眠と仕事は毎日同じで読み取る情報が無いので淡くして地に回し、予定だけを図として立たせる
   var DIAL_COLORS = {
-    sleep: '#0f3b7c',
-    work: '#fb7a00',
+    sleep: '#c2d3ea',
+    work: '#fdd9b3',
     free: '#ffffff',
-    event: '#805ad5'
+    event: '#5b21b6'
   };
   var SLEEP_END_MIN = 7 * 60;
   var WORK_END_MIN = 18 * 60;
