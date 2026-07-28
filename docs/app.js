@@ -35,8 +35,8 @@
   };
   var SLEEP_END_MIN = 7 * 60;
   var WORK_END_MIN = 18 * 60;
-  // 45px程度のセルでは30分の予定が7.5度しかなく視認できないため、最低幅を確保する
-  var MIN_EVENT_ARC_MIN = 24;
+  // バーは12時間で40px弱しかなく1時間が約3px。短すぎる予定が消えないよう最低幅を確保する
+  var MIN_EVENT_SPAN_MIN = 30;
 
   function loadConfig() {
     try {
@@ -157,14 +157,21 @@
       if (isSameDate(cursor, today)) cell.classList.add('today');
       cell.dataset.date = formatIso(cursor);
 
-      var dial = document.createElement('div');
-      dial.className = 'cal-day-dial';
       var num = document.createElement('span');
       num.className = 'cal-day-num';
       num.textContent = cursor.getDate();
-      dial.appendChild(num);
-      cell.appendChild(dial);
 
+      var bars = document.createElement('div');
+      bars.className = 'cal-day-bars';
+      var amBar = document.createElement('div');
+      amBar.className = 'cal-day-bar am';
+      var pmBar = document.createElement('div');
+      pmBar.className = 'cal-day-bar pm';
+      bars.appendChild(amBar);
+      bars.appendChild(pmBar);
+
+      cell.appendChild(num);
+      cell.appendChild(bars);
       calendarGrid.appendChild(cell);
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -191,7 +198,7 @@
     (events || []).forEach(function(ev) {
       var s = ev.s;
       var e = ev.e;
-      if (e - s < MIN_EVENT_ARC_MIN) e = Math.min(1440, s + MIN_EVENT_ARC_MIN);
+      if (e - s < MIN_EVENT_SPAN_MIN) e = Math.min(1440, s + MIN_EVENT_SPAN_MIN);
       var next = [];
       result.forEach(function(seg) {
         if (e <= seg.s || s >= seg.e) { next.push(seg); return; }
@@ -205,13 +212,17 @@
     return result;
   }
 
-  function toConicGradient(intervals) {
-    var parts = intervals.map(function(seg) {
-      var a1 = (seg.s / 1440) * 360;
-      var a2 = (seg.e / 1440) * 360;
-      return seg.c + ' ' + a1.toFixed(2) + 'deg ' + a2.toFixed(2) + 'deg';
-    });
-    return 'conic-gradient(' + parts.join(', ') + ')';
+  // intervals のうち [from, to) の範囲だけを横バーのグラデーションに変換する
+  function toLinearGradient(intervals, from, to) {
+    var span = to - from;
+    var parts = intervals
+      .filter(function(seg) { return seg.e > from && seg.s < to; })
+      .map(function(seg) {
+        var a = ((seg.s > from ? seg.s : from) - from) / span * 100;
+        var b = ((seg.e < to ? seg.e : to) - from) / span * 100;
+        return seg.c + ' ' + a.toFixed(2) + '% ' + b.toFixed(2) + '%';
+      });
+    return 'linear-gradient(to right, ' + parts.join(', ') + ')';
   }
 
   function fetchMonthData(rangeStart, rangeEnd) {
@@ -226,16 +237,24 @@
         var dayOffSet = {};
         (data.dayOffDates || []).forEach(function(d) { dayOffSet[d] = true; });
         var eventsByDate = data.events || {};
-        Array.prototype.forEach.call(calendarGrid.children, function(cell) {
+        var cells = Array.prototype.slice.call(calendarGrid.children);
+
+        cells.forEach(function(cell) {
           var date = cell.dataset.date;
           var isDayOff = !!dayOffSet[date];
-          if (isDayOff) cell.classList.add('dayoff');
-          var dial = cell.querySelector('.cal-day-dial');
-          if (dial) {
-            dial.style.background = toConicGradient(
-              overlayEvents(baseIntervals(isDayOff), eventsByDate[date])
-            );
-          }
+          cell.classList.toggle('dayoff', isDayOff);
+          var segments = overlayEvents(baseIntervals(isDayOff), eventsByDate[date]);
+          cell.querySelector('.am').style.background = toLinearGradient(segments, 0, 720);
+          cell.querySelector('.pm').style.background = toLinearGradient(segments, 720, 1440);
+        });
+
+        // 連休は1本の帯に見せたいので、ブロックの両端だけ角を丸める（週をまたぐ側は丸めない）
+        cells.forEach(function(cell, i) {
+          var prev = (i % 7 === 0) ? null : cells[i - 1];
+          var next = (i % 7 === 6) ? null : cells[i + 1];
+          var isDayOff = cell.classList.contains('dayoff');
+          cell.classList.toggle('block-start', isDayOff && (!prev || !prev.classList.contains('dayoff')));
+          cell.classList.toggle('block-end', isDayOff && (!next || !next.classList.contains('dayoff')));
         });
       })
       .catch(function(err) { console.error(err); });
