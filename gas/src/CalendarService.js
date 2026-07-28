@@ -46,6 +46,18 @@ var CalendarService = {
     return byDate;
   },
 
+  // 削除候補の列挙。終日予定（「休み」を含む）は対象外。startTime を指定した場合は開始時刻も一致するものだけ
+  findTimedEvents: function(rangeStart, rangeEnd, startTime) {
+    var startMin = startTime ? parseHhMm(startTime) : null;
+    return CalendarApp.getCalendarById(CONFIG.CALENDAR_ID)
+      .getEvents(rangeStart, rangeEnd)
+      .filter(function(e) {
+        if (e.isAllDayEvent()) return false;
+        if (startMin !== null && minutesOfDay(e.getStartTime()) !== startMin) return false;
+        return true;
+      });
+  },
+
   // 「休み」以外の終日予定は無視し、時間指定の予定のみを対象にする
   fetchBusyIntervals: function(windowStart, windowEnd) {
     var events = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID).getEvents(windowStart, windowEnd);

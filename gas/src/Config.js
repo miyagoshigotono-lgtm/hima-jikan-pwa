@@ -16,5 +16,8 @@ var CONFIG = {
   // 時刻を指定せずに予定を追加したときの自動割当
   AUTO_SLOT_DAYOFF_START_HOUR: 7,   // 休みの日は起床直後から探す
   AUTO_SLOT_WORKDAY_START_HOUR: 18, // 平日は仕事終わりから探す
-  AUTO_SLOT_END_HOUR: 22            // 探索上限（暇時間帯ルールの終端と揃える）
+  AUTO_SLOT_END_HOUR: 22,           // 探索上限（暇時間帯ルールの終端と揃える）
+
+  // 「大ちゃんと遊ぶ予定を消して」のように日付を言わずに削除するときの探索範囲
+  DELETE_SEARCH_DAYS: 90
 };

@@ -78,6 +78,10 @@ function handleRequest(transcript) {
     return handleFreeTimeQuery(extraction.freeTimeQuery);
   }
 
+  if (extraction.intent === 'delete_event') {
+    return handleDeleteEvent(extraction.deleteEvent || {}, transcript);
+  }
+
   if (extraction.intent === 'query_free_evenings') {
     if (!extraction.freeEveningsQuery || !extraction.freeEveningsQuery.periodStart || !extraction.freeEveningsQuery.periodEnd) {
       return {status: 'clarify', message: 'いつからいつまでの範囲か、もう少し詳しく教えてください。'};
@@ -178,6 +182,63 @@ function handleAddEvent(fields) {
     console.error(err);
     return {status: 'error', message: '予定の追加に失敗しました。もう一度お試しください。'};
   }
+}
+
+// 確認を挟まず即削除する。ただし発話がどれを指すか特定できない場合だけは候補を返して聞き直してもらう
+function handleDeleteEvent(fields, transcript) {
+  var todayIso = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  var searchFrom = fields.date || todayIso;
+  var searchTo = fields.date ? addDays(fields.date, 1) : addDays(todayIso, CONFIG.DELETE_SEARCH_DAYS);
+
+  var candidates;
+  try {
+    candidates = CalendarService.findTimedEvents(
+      parseIsoDate(searchFrom),
+      parseIsoDate(searchTo),
+      fields.startTime
+    );
+  } catch (err) {
+    console.error(err);
+    return {status: 'error', message: 'カレンダーの取得に失敗しました。もう一度お試しください。'};
+  }
+
+  var where = fields.date ? formatDateJa(fields.date) + 'に' : 'これから先に';
+  if (!candidates.length) {
+    return {status: 'rejected', type: 'delete_event', message: where + '削除できる予定はありませんでした。'};
+  }
+
+  var labels = candidates.map(function(e) {
+    return formatDateJa(Utilities.formatDate(e.getStartTime(), CONFIG.TIMEZONE, 'yyyy-MM-dd')) + ' ' +
+      formatMinutes(minutesOfDay(e.getStartTime())) + '〜' +
+      formatMinutes(minutesOfDay(e.getEndTime())) + ' ' + e.getTitle();
+  });
+
+  var index;
+  try {
+    index = IntentService.pickEventToDelete(transcript, labels);
+  } catch (err) {
+    console.error(err);
+    return {status: 'error', message: '削除する予定の特定に失敗しました。もう一度お試しください。'};
+  }
+
+  if (index < 0 || index >= candidates.length) {
+    return {
+      status: 'rejected',
+      type: 'delete_event',
+      message: 'どの予定か特定できませんでした。候補は次の通りです。\n' + labels.join('\n')
+    };
+  }
+
+  var target = candidates[index];
+  var label = labels[index];
+  try {
+    target.deleteEvent();
+  } catch (err) {
+    console.error(err);
+    return {status: 'error', message: '予定の削除に失敗しました。もう一度お試しください。'};
+  }
+
+  return {status: 'ok', type: 'delete_event', message: label + ' を削除しました。'};
 }
 
 // 期間内の各日について、仕事終わり（18:00〜22:00）の空きを返す

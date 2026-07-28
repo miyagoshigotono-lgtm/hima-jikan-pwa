@@ -20,11 +20,15 @@
   var calendarGrid = document.getElementById('calendarGrid');
   var calPrev = document.getElementById('calPrev');
   var calNext = document.getElementById('calNext');
+  var dayDetail = document.getElementById('dayDetail');
 
   var currentConfig = loadConfig();
   var speechSupported = true;
   var calViewYear, calViewMonth;
   var gridRangeStart, gridRangeEnd;
+  var monthData = {dayOffSet: {}, eventsByDate: {}};
+  var selectedDate = null;
+  var WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
   // 24時間リングの配色。0-7時=睡眠 / 7-18時=仕事 / 18-24時=自由、予定はその上を塗り替える
   var DIAL_COLORS = {
@@ -147,6 +151,10 @@
     gridRangeStart = gridStart;
     gridRangeEnd = gridEnd;
 
+    // 月を移動したらセルが作り直されるので選択状態は解除する
+    selectedDate = null;
+    dayDetail.style.display = 'none';
+
     var today = new Date();
     calendarGrid.innerHTML = '';
     var cursor = new Date(gridStart);
@@ -237,6 +245,7 @@
         var dayOffSet = {};
         (data.dayOffDates || []).forEach(function(d) { dayOffSet[d] = true; });
         var eventsByDate = data.events || {};
+        monthData = {dayOffSet: dayOffSet, eventsByDate: eventsByDate};
         var cells = Array.prototype.slice.call(calendarGrid.children);
 
         cells.forEach(function(cell) {
@@ -256,9 +265,70 @@
           cell.classList.toggle('block-start', isDayOff && (!prev || !prev.classList.contains('dayoff')));
           cell.classList.toggle('block-end', isDayOff && (!next || !next.classList.contains('dayoff')));
         });
+
+        // 削除などで内容が変わった後も開いたままのパネルを最新にする
+        if (selectedDate) renderDayDetail(selectedDate);
       })
       .catch(function(err) { console.error(err); });
   }
+
+  function formatDateJa(dateIso) {
+    var parts = dateIso.split('-').map(Number);
+    var d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return (d.getMonth() + 1) + '/' + d.getDate() + '(' + WEEKDAY_JA[d.getDay()] + ')';
+  }
+
+  function formatMinutes(minutes) {
+    return Math.floor(minutes / 60) % 24 + ':' + ('0' + (minutes % 60)).slice(-2);
+  }
+
+  function renderDayDetail(dateIso) {
+    var isDayOff = !!monthData.dayOffSet[dateIso];
+    var events = (monthData.eventsByDate[dateIso] || [])
+      .slice()
+      .sort(function(a, b) { return a.s - b.s; });
+
+    var html = '<div class="day-detail-head">' + formatDateJa(dateIso) +
+      '<span class="day-detail-tag' + (isDayOff ? ' off' : '') + '">' +
+      (isDayOff ? '休み' : '仕事') + '</span></div>';
+
+    if (!events.length) {
+      html += '<div class="day-detail-empty">予定はありません</div>';
+    } else {
+      html += '<ul class="day-detail-list">' + events.map(function(ev) {
+        return '<li><span class="time">' + formatMinutes(ev.s) + '〜' + formatMinutes(ev.e) +
+          '</span><span>' + escapeHtml(ev.t || '') + '</span></li>';
+      }).join('') + '</ul>';
+    }
+
+    dayDetail.innerHTML = html;
+    dayDetail.style.display = 'block';
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function(ch) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+    });
+  }
+
+  function selectDate(dateIso) {
+    // 同じ日をもう一度タップしたら閉じる
+    if (selectedDate === dateIso) {
+      selectedDate = null;
+      dayDetail.style.display = 'none';
+    } else {
+      selectedDate = dateIso;
+      renderDayDetail(dateIso);
+    }
+    Array.prototype.forEach.call(calendarGrid.children, function(cell) {
+      cell.classList.toggle('selected', cell.dataset.date === selectedDate);
+    });
+  }
+
+  calendarGrid.addEventListener('click', function(event) {
+    var cell = event.target.closest('.cal-day');
+    if (cell && cell.dataset.date) selectDate(cell.dataset.date);
+  });
 
   calPrev.addEventListener('click', function() {
     calViewMonth--;
@@ -305,8 +375,10 @@
         if (data.status === 'ok') {
           showResult('ok', data.message);
           speak(data.message);
-          // 予定が増えたのでカレンダーのリングを描き直す
-          if (data.type === 'add_event') fetchMonthData(gridRangeStart, gridRangeEnd);
+          // 予定が増減したのでカレンダーを描き直す
+          if (data.type === 'add_event' || data.type === 'delete_event') {
+            fetchMonthData(gridRangeStart, gridRangeEnd);
+          }
         } else if (data.status === 'rejected') {
           showResult('rejected', data.message);
           speak(data.message);

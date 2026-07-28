@@ -91,6 +91,7 @@ h1 {
   align-items: center;
   gap: 3px;
   padding: 4px 3px;
+  cursor: pointer;
 }
 
 .cal-day-num {
@@ -149,6 +150,64 @@ h1 {
 .cal-day.block-end {
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
+}
+
+.cal-day.selected {
+  outline: 2px solid #2b6cb0;
+  outline-offset: -2px;
+}
+
+/* 日付タップで開く閲覧パネル。削除などの操作は音声側で行う */
+.day-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
+  font-size: 0.82rem;
+}
+
+.day-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.day-detail-tag {
+  font-size: 0.68rem;
+  font-weight: normal;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #eef1f5;
+  color: #555;
+}
+
+.day-detail-tag.off {
+  background: #fdecec;
+  color: #c53030;
+}
+
+.day-detail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.day-detail-list li {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  line-height: 1.4;
+}
+
+.day-detail-list .time {
+  color: #805ad5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.day-detail-empty {
+  color: #999;
 }
 
 .calendar-legend {
