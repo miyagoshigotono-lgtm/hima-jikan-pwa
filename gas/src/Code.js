@@ -15,12 +15,14 @@ function handleCalendarMonth(params) {
     return jsonOutput({status: 'error', message: 'start/endパラメータが必要です'});
   }
   try {
-    var rangeStart = parseIsoDate(params.start);
-    var rangeEnd = parseIsoDate(addDays(params.end, 1));
+    var summary = CalendarService.fetchMonthSummary(
+      parseIsoDate(params.start),
+      parseIsoDate(addDays(params.end, 1))
+    );
     return jsonOutput({
       status: 'ok',
-      dayOffDates: CalendarService.fetchDayOffDates(rangeStart, rangeEnd),
-      events: CalendarService.fetchTimedEventsByDate(rangeStart, rangeEnd)
+      dayOffDates: summary.dayOffDates,
+      events: summary.events
     });
   } catch (err) {
     console.error(err);

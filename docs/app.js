@@ -32,6 +32,10 @@
   var calViewYear, calViewMonth;
   var gridRangeStart, gridRangeEnd;
   var monthData = {dayOffSet: {}, eventsByDate: {}};
+  // 取得済みの月を保持して、行き来のたびに待たされないようにする。
+  // 予定を変更したら丸ごと捨てる（古い内容を見せないため）
+  var monthCache = {};
+  var monthInFlight = {};
   // 聞き返しをまたいで文脈を保つための会話履歴。用が済んだら捨てる
   var conversation = [];
   var conversationAt = 0;
@@ -150,15 +154,21 @@
     renderCalendar();
   }
 
+  // その月のカレンダーが覆う日曜始まりの範囲
+  function gridRangeFor(year, month) {
+    var gridStart = new Date(year, month, 1);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+    var gridEnd = new Date(year, month + 1, 0);
+    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+    return {start: gridStart, end: gridEnd};
+  }
+
   function renderCalendar() {
     calMonthLabel.textContent = calViewYear + '年' + (calViewMonth + 1) + '月';
 
-    var firstOfMonth = new Date(calViewYear, calViewMonth, 1);
-    var lastOfMonth = new Date(calViewYear, calViewMonth + 1, 0);
-    var gridStart = new Date(firstOfMonth);
-    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-    var gridEnd = new Date(lastOfMonth);
-    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+    var range = gridRangeFor(calViewYear, calViewMonth);
+    var gridStart = range.start;
+    var gridEnd = range.end;
 
     gridRangeStart = gridStart;
     gridRangeEnd = gridEnd;
@@ -245,41 +255,89 @@
     return 'linear-gradient(to right, ' + parts.join(', ') + ')';
   }
 
-  function fetchMonthData(rangeStart, rangeEnd) {
-    if (!currentConfig || !rangeStart || !rangeEnd) return;
+  function rangeKey(rangeStart, rangeEnd) {
+    return formatIso(rangeStart) + '_' + formatIso(rangeEnd);
+  }
+
+  function requestMonth(rangeStart, rangeEnd) {
+    var key = rangeKey(rangeStart, rangeEnd);
+    if (monthCache[key]) return Promise.resolve(monthCache[key]);
+    // 同じ範囲が同時に要求されることがある（起動時や先読みと表示の重なり）ので1本にまとめる
+    if (monthInFlight[key]) return monthInFlight[key];
+
     var url = currentConfig.GAS_ENDPOINT +
       '?action=calendarMonth&start=' + formatIso(rangeStart) + '&end=' + formatIso(rangeEnd) +
       '&secret=' + encodeURIComponent(currentConfig.SHARED_SECRET);
-    fetch(url)
+
+    var pending = fetch(url)
       .then(function(res) { return res.json(); })
       .then(function(data) {
-        if (data.status !== 'ok') return;
+        if (data.status !== 'ok') throw new Error(data.message || 'calendarMonth failed');
         var dayOffSet = {};
         (data.dayOffDates || []).forEach(function(d) { dayOffSet[d] = true; });
-        var eventsByDate = data.events || {};
-        monthData = {dayOffSet: dayOffSet, eventsByDate: eventsByDate};
-        var cells = Array.prototype.slice.call(calendarGrid.children);
+        var parsed = {dayOffSet: dayOffSet, eventsByDate: data.events || {}};
+        monthCache[key] = parsed;
+        delete monthInFlight[key];
+        return parsed;
+      })
+      .catch(function(err) {
+        delete monthInFlight[key];
+        throw err;
+      });
 
-        cells.forEach(function(cell) {
-          var date = cell.dataset.date;
-          var isDayOff = !!dayOffSet[date];
-          cell.classList.toggle('dayoff', isDayOff);
-          var segments = overlayEvents(baseIntervals(isDayOff), eventsByDate[date]);
-          cell.querySelector('.am').style.background = toLinearGradient(segments, 0, 720);
-          cell.querySelector('.pm').style.background = toLinearGradient(segments, 720, 1440);
-        });
+    monthInFlight[key] = pending;
+    return pending;
+  }
 
-        // 連休は1本の帯に見せたいので、ブロックの両端だけ角を丸める（週をまたぐ側は丸めない）
-        cells.forEach(function(cell, i) {
-          var prev = (i % 7 === 0) ? null : cells[i - 1];
-          var next = (i % 7 === 6) ? null : cells[i + 1];
-          var isDayOff = cell.classList.contains('dayoff');
-          cell.classList.toggle('block-start', isDayOff && (!prev || !prev.classList.contains('dayoff')));
-          cell.classList.toggle('block-end', isDayOff && (!next || !next.classList.contains('dayoff')));
-        });
+  function applyMonthData(data) {
+    monthData = data;
+    var cells = Array.prototype.slice.call(calendarGrid.children);
 
-        // 削除などで内容が変わった後も開いたままのパネルを最新にする
-        if (selectedDate) renderDayDetail(selectedDate);
+    cells.forEach(function(cell) {
+      var date = cell.dataset.date;
+      var isDayOff = !!data.dayOffSet[date];
+      cell.classList.toggle('dayoff', isDayOff);
+      var segments = overlayEvents(baseIntervals(isDayOff), data.eventsByDate[date]);
+      cell.querySelector('.am').style.background = toLinearGradient(segments, 0, 720);
+      cell.querySelector('.pm').style.background = toLinearGradient(segments, 720, 1440);
+    });
+
+    // 連休は1本の帯に見せたいので、ブロックの両端だけ角を丸める（週をまたぐ側は丸めない）
+    cells.forEach(function(cell, i) {
+      var prev = (i % 7 === 0) ? null : cells[i - 1];
+      var next = (i % 7 === 6) ? null : cells[i + 1];
+      var isDayOff = cell.classList.contains('dayoff');
+      cell.classList.toggle('block-start', isDayOff && (!prev || !prev.classList.contains('dayoff')));
+      cell.classList.toggle('block-end', isDayOff && (!next || !next.classList.contains('dayoff')));
+    });
+
+    // 削除などで内容が変わった後も開いたままのパネルを最新にする
+    if (selectedDate) renderDayDetail(selectedDate);
+  }
+
+  // 表示中の月の前後を裏で取っておく。次/前を押した時点で待ち時間が無くなる
+  function prefetchNeighbours() {
+    if (!currentConfig) return;
+    [-1, 1].forEach(function(offset) {
+      var month = calViewMonth + offset;
+      var year = calViewYear;
+      if (month < 0) { month = 11; year--; }
+      if (month > 11) { month = 0; year++; }
+      var range = gridRangeFor(year, month);
+      if (monthCache[rangeKey(range.start, range.end)]) return;
+      requestMonth(range.start, range.end).catch(function(err) { console.warn(err); });
+    });
+  }
+
+  function fetchMonthData(rangeStart, rangeEnd) {
+    if (!currentConfig || !rangeStart || !rangeEnd) return;
+    var requestedKey = rangeKey(rangeStart, rangeEnd);
+    requestMonth(rangeStart, rangeEnd)
+      .then(function(data) {
+        // 取得中に月を切り替えられていたら、古い月のデータを描き込まない
+        if (rangeKey(gridRangeStart, gridRangeEnd) !== requestedKey) return;
+        applyMonthData(data);
+        prefetchNeighbours();
       })
       .catch(function(err) { console.error(err); });
   }
@@ -421,8 +479,10 @@
         if (data.status === 'ok') {
           showResult('ok', data.message);
           speak(data.message);
-          // 予定が変わったのでカレンダーを描き直す
+          // 予定が変わったのでキャッシュを捨てて取り直す
           if (data.type === 'add_event' || data.type === 'delete_event' || data.type === 'update_event') {
+            monthCache = {};
+            monthInFlight = {};
             fetchMonthData(gridRangeStart, gridRangeEnd);
           }
         } else if (data.status === 'rejected') {
