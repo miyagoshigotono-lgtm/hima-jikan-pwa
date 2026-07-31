@@ -45,27 +45,65 @@ h1 {
   margin-bottom: 20px;
 }
 
-.calendar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* 月をまたいで縦に繋げる。曜日見出しは外に固定し、中身だけをスクロールさせる */
+.calendar-scroll {
+  position: relative;
+  max-height: 58vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cal-month-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 5px 10px;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: #333;
+  background: var(--month-tint, #eef1f5);
+  border-left: 5px solid var(--month-accent, #888);
+  border-radius: 0 4px 4px 0;
+}
+
+.cal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  column-gap: 0;
+  row-gap: 6px;
   margin-bottom: 10px;
 }
 
-.cal-nav {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: #f0f3f7;
-  color: #2b6cb0;
-  font-size: 1.1rem;
-  cursor: pointer;
+.cal-day.empty {
+  cursor: default;
 }
 
-.cal-month-label {
-  font-weight: bold;
-  color: #333;
+/* 月ごとの色。季節が進むにつれて色相が回るようにしてある */
+.cal-month[data-month="0"]  { --month-accent: #3f6fa8; --month-tint: #e6eef7; }
+.cal-month[data-month="1"]  { --month-accent: #4a86b8; --month-tint: #e8f1f8; }
+.cal-month[data-month="2"]  { --month-accent: #6aa84f; --month-tint: #ecf5e8; }
+.cal-month[data-month="3"]  { --month-accent: #d97fa1; --month-tint: #fbecf1; }
+.cal-month[data-month="4"]  { --month-accent: #57a05a; --month-tint: #e9f4ea; }
+.cal-month[data-month="5"]  { --month-accent: #4f9a94; --month-tint: #e7f3f2; }
+.cal-month[data-month="6"]  { --month-accent: #e08c2e; --month-tint: #fcf0e0; }
+.cal-month[data-month="7"]  { --month-accent: #d95c5c; --month-tint: #fbeaea; }
+.cal-month[data-month="8"]  { --month-accent: #b5793f; --month-tint: #f6eee4; }
+.cal-month[data-month="9"]  { --month-accent: #a15b8a; --month-tint: #f5eaf1; }
+.cal-month[data-month="10"] { --month-accent: #8a6a3f; --month-tint: #f2ece3; }
+.cal-month[data-month="11"] { --month-accent: #6b6aa8; --month-tint: #ececf6; }
+
+.today-button {
+  display: block;
+  margin: 10px auto 0;
+  padding: 5px 14px;
+  border: 1px solid #2b6cb0;
+  border-radius: 12px;
+  background: white;
+  color: #2b6cb0;
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 
 .calendar-weekdays {
@@ -75,14 +113,6 @@ h1 {
   font-size: 0.75rem;
   color: #888;
   margin-bottom: 4px;
-}
-
-/* 連休の背景を地続きに見せるため横方向のgapは持たせず、セル内のpaddingで間隔を作る */
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  column-gap: 0;
-  row-gap: 6px;
 }
 
 .cal-day {

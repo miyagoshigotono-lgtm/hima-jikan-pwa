@@ -19,18 +19,19 @@
   var setupSave = document.getElementById('setupSave');
   var setupError = document.getElementById('setupError');
   var calendarSection = document.getElementById('calendarSection');
-  var calMonthLabel = document.getElementById('calMonthLabel');
-  var calendarGrid = document.getElementById('calendarGrid');
-  var calPrev = document.getElementById('calPrev');
-  var calNext = document.getElementById('calNext');
+  var calendarScroll = document.getElementById('calendarScroll');
+  var todayButton = document.getElementById('todayButton');
   var dayDetail = document.getElementById('dayDetail');
   var conversationHint = document.getElementById('conversationHint');
   var conversationReset = document.getElementById('conversationReset');
 
   var currentConfig = loadConfig();
   var speechSupported = true;
-  var calViewYear, calViewMonth;
-  var gridRangeStart, gridRangeEnd;
+  // 縦に繋げて表示する範囲。休みが入っているのは今年ぶんだけなので前後1年で足りる
+  var MONTHS_BACK = 12;
+  var MONTHS_FORWARD = 12;
+  var MONTH_LOAD_MARGIN_PX = 600;
+  var scrollPending = false;
   var monthData = {dayOffSet: {}, eventsByDate: {}};
   // 取得済みの月を保持して、行き来のたびに待たされないようにする。
   // 予定を変更したら丸ごと捨てる（古い内容を見せないため）
@@ -117,7 +118,9 @@
       micButton.style.display = 'none';
       setStatus('テキストで入力してください。');
     }
-    fetchMonthData(gridRangeStart, gridRangeEnd);
+    // 設定前は取得できていないので、設定直後にここで読み込ませる
+    scrollToToday();
+    loadVisibleMonths();
   }
 
   setupSave.addEventListener('click', function() {
@@ -147,66 +150,139 @@
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
-  function initCalendar() {
-    var now = new Date();
-    calViewYear = now.getFullYear();
-    calViewMonth = now.getMonth();
-    renderCalendar();
+  function buildDayCell(date, today) {
+    var cell = document.createElement('div');
+    cell.className = 'cal-day';
+    if (isSameDate(date, today)) cell.classList.add('today');
+    cell.dataset.date = formatIso(date);
+
+    var num = document.createElement('span');
+    num.className = 'cal-day-num';
+    num.textContent = date.getDate();
+
+    var bars = document.createElement('div');
+    bars.className = 'cal-day-bars';
+    var amBar = document.createElement('div');
+    amBar.className = 'cal-day-bar am';
+    var pmBar = document.createElement('div');
+    pmBar.className = 'cal-day-bar pm';
+    bars.appendChild(amBar);
+    bars.appendChild(pmBar);
+
+    cell.appendChild(num);
+    cell.appendChild(bars);
+    return cell;
   }
 
-  // その月のカレンダーが覆う日曜始まりの範囲
-  function gridRangeFor(year, month) {
-    var gridStart = new Date(year, month, 1);
-    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-    var gridEnd = new Date(year, month + 1, 0);
-    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
-    return {start: gridStart, end: gridEnd};
-  }
+  // 月ごとに1ブロック。連続表示なので前後月の日は入れず、月初の曜日ぶんは空セルで詰める
+  function buildMonthBlock(year, month, today) {
+    var block = document.createElement('section');
+    block.className = 'cal-month';
+    block.dataset.month = month;
+    block.dataset.key = year + '-' + month;
 
-  function renderCalendar() {
-    calMonthLabel.textContent = calViewYear + '年' + (calViewMonth + 1) + '月';
+    var head = document.createElement('div');
+    head.className = 'cal-month-head';
+    head.textContent = year + '年' + (month + 1) + '月';
+    block.appendChild(head);
 
-    var range = gridRangeFor(calViewYear, calViewMonth);
-    var gridStart = range.start;
-    var gridEnd = range.end;
+    var grid = document.createElement('div');
+    grid.className = 'cal-month-grid';
 
-    gridRangeStart = gridStart;
-    gridRangeEnd = gridEnd;
-
-    // 月を移動したらセルが作り直されるので選択状態は解除する
-    selectedDate = null;
-    dayDetail.style.display = 'none';
-
-    var today = new Date();
-    calendarGrid.innerHTML = '';
-    var cursor = new Date(gridStart);
-    while (cursor <= gridEnd) {
-      var cell = document.createElement('div');
-      cell.className = 'cal-day';
-      if (cursor.getMonth() !== calViewMonth) cell.classList.add('other-month');
-      if (isSameDate(cursor, today)) cell.classList.add('today');
-      cell.dataset.date = formatIso(cursor);
-
-      var num = document.createElement('span');
-      num.className = 'cal-day-num';
-      num.textContent = cursor.getDate();
-
-      var bars = document.createElement('div');
-      bars.className = 'cal-day-bars';
-      var amBar = document.createElement('div');
-      amBar.className = 'cal-day-bar am';
-      var pmBar = document.createElement('div');
-      pmBar.className = 'cal-day-bar pm';
-      bars.appendChild(amBar);
-      bars.appendChild(pmBar);
-
-      cell.appendChild(num);
-      cell.appendChild(bars);
-      calendarGrid.appendChild(cell);
-      cursor.setDate(cursor.getDate() + 1);
+    var firstWeekday = new Date(year, month, 1).getDay();
+    for (var i = 0; i < firstWeekday; i++) {
+      var pad = document.createElement('div');
+      pad.className = 'cal-day empty';
+      grid.appendChild(pad);
+    }
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (var day = 1; day <= daysInMonth; day++) {
+      grid.appendChild(buildDayCell(new Date(year, month, day), today));
     }
 
-    fetchMonthData(gridStart, gridEnd);
+    block.appendChild(grid);
+    return block;
+  }
+
+  function buildCalendar() {
+    var today = new Date();
+    calendarScroll.innerHTML = '';
+    var first = new Date(today.getFullYear(), today.getMonth() - MONTHS_BACK, 1);
+    var total = MONTHS_BACK + MONTHS_FORWARD + 1;
+    for (var i = 0; i < total; i++) {
+      var d = new Date(first.getFullYear(), first.getMonth() + i, 1);
+      calendarScroll.appendChild(buildMonthBlock(d.getFullYear(), d.getMonth(), today));
+    }
+    // 先に今月へ寄せてから読む。順が逆だと1年前の月を取りに行ってしまう
+    scrollToToday();
+    loadVisibleMonths();
+  }
+
+  function scrollToToday() {
+    var today = new Date();
+    var block = calendarScroll.querySelector(
+      '.cal-month[data-key="' + today.getFullYear() + '-' + today.getMonth() + '"]'
+    );
+    if (block) calendarScroll.scrollTop = block.offsetTop;
+  }
+
+  // 見えている（あと少しで見える）月だけ取りに行く。25ヶ月を一度に読むと待たされるため
+  function loadVisibleMonths() {
+    if (!currentConfig) return;
+    var top = calendarScroll.scrollTop - MONTH_LOAD_MARGIN_PX;
+    var bottom = calendarScroll.scrollTop + calendarScroll.clientHeight + MONTH_LOAD_MARGIN_PX;
+    Array.prototype.forEach.call(calendarScroll.children, function(block) {
+      var blockTop = block.offsetTop;
+      if (blockTop + block.offsetHeight >= top && blockTop <= bottom) loadMonthBlock(block);
+    });
+  }
+
+  // 描画が止まっている状況（背景タブ等）でも動くよう rAF ではなく setTimeout で間引く
+  calendarScroll.addEventListener('scroll', function() {
+    if (scrollPending) return;
+    scrollPending = true;
+    setTimeout(function() {
+      scrollPending = false;
+      loadVisibleMonths();
+    }, 100);
+  });
+
+  function loadMonthBlock(block) {
+    if (!currentConfig) return;
+    if (block.dataset.loaded === '1' || block.dataset.loading === '1') return;
+    block.dataset.loading = '1';
+
+    var parts = block.dataset.key.split('-');
+    var year = Number(parts[0]);
+    var month = Number(parts[1]);
+
+    requestMonth(new Date(year, month, 1), new Date(year, month + 1, 0))
+      .then(function(data) {
+        block.dataset.loading = '';
+        block.dataset.loaded = '1';
+        mergeMonthData(data);
+        paintMonthBlock(block, data);
+      })
+      .catch(function(err) {
+        block.dataset.loading = '';
+        console.error(err);
+      });
+  }
+
+  // 日詳細パネルは表示中の月に限らず引けるよう、読み込んだ月を積み上げて持つ
+  function mergeMonthData(data) {
+    Object.keys(data.dayOffSet).forEach(function(d) { monthData.dayOffSet[d] = true; });
+    Object.keys(data.eventsByDate).forEach(function(d) { monthData.eventsByDate[d] = data.eventsByDate[d]; });
+  }
+
+  function reloadCalendarData() {
+    monthCache = {};
+    monthInFlight = {};
+    monthData = {dayOffSet: {}, eventsByDate: {}};
+    Array.prototype.forEach.call(calendarScroll.children, function(block) {
+      block.dataset.loaded = '';
+    });
+    loadVisibleMonths();
   }
 
   function baseIntervals(isDayOff) {
@@ -289,11 +365,11 @@
     return pending;
   }
 
-  function applyMonthData(data) {
-    monthData = data;
-    var cells = Array.prototype.slice.call(calendarGrid.children);
+  function paintMonthBlock(block, data) {
+    var cells = Array.prototype.slice.call(block.querySelector('.cal-month-grid').children);
 
     cells.forEach(function(cell) {
+      if (cell.classList.contains('empty')) return;
       var date = cell.dataset.date;
       var isDayOff = !!data.dayOffSet[date];
       cell.classList.toggle('dayoff', isDayOff);
@@ -304,6 +380,7 @@
 
     // 連休は1本の帯に見せたいので、ブロックの両端だけ角を丸める（週をまたぐ側は丸めない）
     cells.forEach(function(cell, i) {
+      if (cell.classList.contains('empty')) return;
       var prev = (i % 7 === 0) ? null : cells[i - 1];
       var next = (i % 7 === 6) ? null : cells[i + 1];
       var isDayOff = cell.classList.contains('dayoff');
@@ -313,33 +390,6 @@
 
     // 削除などで内容が変わった後も開いたままのパネルを最新にする
     if (selectedDate) renderDayDetail(selectedDate);
-  }
-
-  // 表示中の月の前後を裏で取っておく。次/前を押した時点で待ち時間が無くなる
-  function prefetchNeighbours() {
-    if (!currentConfig) return;
-    [-1, 1].forEach(function(offset) {
-      var month = calViewMonth + offset;
-      var year = calViewYear;
-      if (month < 0) { month = 11; year--; }
-      if (month > 11) { month = 0; year++; }
-      var range = gridRangeFor(year, month);
-      if (monthCache[rangeKey(range.start, range.end)]) return;
-      requestMonth(range.start, range.end).catch(function(err) { console.warn(err); });
-    });
-  }
-
-  function fetchMonthData(rangeStart, rangeEnd) {
-    if (!currentConfig || !rangeStart || !rangeEnd) return;
-    var requestedKey = rangeKey(rangeStart, rangeEnd);
-    requestMonth(rangeStart, rangeEnd)
-      .then(function(data) {
-        // 取得中に月を切り替えられていたら、古い月のデータを描き込まない
-        if (rangeKey(gridRangeStart, gridRangeEnd) !== requestedKey) return;
-        applyMonthData(data);
-        prefetchNeighbours();
-      })
-      .catch(function(err) { console.error(err); });
   }
 
   function formatDateJa(dateIso) {
@@ -390,27 +440,17 @@
       selectedDate = dateIso;
       renderDayDetail(dateIso);
     }
-    Array.prototype.forEach.call(calendarGrid.children, function(cell) {
+    Array.prototype.forEach.call(calendarScroll.querySelectorAll('.cal-day'), function(cell) {
       cell.classList.toggle('selected', cell.dataset.date === selectedDate);
     });
   }
 
-  calendarGrid.addEventListener('click', function(event) {
+  calendarScroll.addEventListener('click', function(event) {
     var cell = event.target.closest('.cal-day');
     if (cell && cell.dataset.date) selectDate(cell.dataset.date);
   });
 
-  calPrev.addEventListener('click', function() {
-    calViewMonth--;
-    if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
-    renderCalendar();
-  });
-
-  calNext.addEventListener('click', function() {
-    calViewMonth++;
-    if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
-    renderCalendar();
-  });
+  todayButton.addEventListener('click', scrollToToday);
 
   function speak(text) {
     if (!window.speechSynthesis) return;
@@ -481,9 +521,7 @@
           speak(data.message);
           // 予定が変わったのでキャッシュを捨てて取り直す
           if (data.type === 'add_event' || data.type === 'delete_event' || data.type === 'update_event') {
-            monthCache = {};
-            monthInFlight = {};
-            fetchMonthData(gridRangeStart, gridRangeEnd);
+            reloadCalendarData();
           }
         } else if (data.status === 'rejected') {
           showResult('rejected', data.message);
@@ -661,7 +699,7 @@
     setupSpeechRecognition();
   }
 
-  initCalendar();
+  buildCalendar();
 
   if (currentConfig) {
     showMainUI();
