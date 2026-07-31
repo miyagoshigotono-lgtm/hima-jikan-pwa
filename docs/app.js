@@ -1,9 +1,9 @@
 (function() {
   var STORAGE_KEY = 'himajikanConfig';
   var REQUEST_TIMEOUT_MS = 25000;
-  // 話が途切れてからこれだけ無音が続いたら喋り終わったとみなす。
-  // 短いと言い淀んだだけで打ち切られるので長めに取る
-  var SILENCE_TIMEOUT_MS = 3500;
+  var IDLE_STATUS = 'ボタンを押しながら話してください';
+  // 押しっぱなしのまま放置された場合の保険
+  var MAX_HOLD_MS = 60000;
 
   var micButton = document.getElementById('micButton');
   var statusEl = document.getElementById('status');
@@ -108,7 +108,7 @@
     textFallback.style.display = 'flex';
     if (speechSupported) {
       micButton.style.display = '';
-      setStatus('タップして話しかけてください');
+      setStatus(IDLE_STATUS);
     } else {
       micButton.style.display = 'none';
       setStatus('テキストで入力してください。');
@@ -409,7 +409,7 @@
       .then(function(res) { return res.json(); })
       .then(function(data) {
         clearTimeout(timeoutId);
-        setStatus('タップして話しかけてください');
+        setStatus(IDLE_STATUS);
         if (data.status === 'clarify') {
           continueConversation(transcript, data.message);
           showResult('clarify', data.message);
@@ -434,7 +434,7 @@
       })
       .catch(function(err) {
         clearTimeout(timeoutId);
-        setStatus('タップして話しかけてください');
+        setStatus(IDLE_STATUS);
         console.error(err);
         clearConversation();
         showResult('error', 'サーバーとの通信に失敗しました。もう一度お試しください。');
@@ -459,18 +459,10 @@
     var listening = false;
     var stopRequested = false; // 自分で止めたのか、勝手に切れたのかの区別
     var finalText = '';
-    var silenceTimer = null;
-
-    function armSilenceTimer() {
-      clearTimeout(silenceTimer);
-      silenceTimer = setTimeout(function() {
-        stopRequested = true;
-        try { recognition.stop(); } catch (err) { console.warn(err); }
-      }, SILENCE_TIMEOUT_MS);
-    }
+    var holdTimer = null;
 
     function finishListening() {
-      clearTimeout(silenceTimer);
+      clearTimeout(holdTimer);
       listening = false;
       micButton.classList.remove('listening');
       var text = finalText.trim();
@@ -493,21 +485,20 @@
         }
       }
       setStatus((finalText + interim) || '聞き取り中...');
-      armSilenceTimer();
     };
 
     recognition.onerror = function(event) {
-      // continuous では無音のたびに no-speech が来る。止めずに聞き続ける
+      // continuous では無音のたびに no-speech が来る。指を離すまで聞き続ける
       if (event.error === 'no-speech') return;
 
-      clearTimeout(silenceTimer);
+      clearTimeout(holdTimer);
       stopRequested = true;
       listening = false;
       micButton.classList.remove('listening');
       if (event.error === 'not-allowed') {
         setStatus('マイクの使用が許可されていません。');
       } else if (event.error === 'aborted') {
-        setStatus('タップして話しかけてください');
+        setStatus(IDLE_STATUS);
       } else {
         console.error(event.error);
         setStatus('音声認識でエラーが発生しました。もう一度お試しください');
@@ -516,7 +507,7 @@
 
     recognition.onend = function() {
       // Android Chrome は continuous でも勝手に終わることがあるので、
-      // こちらから止めていない限りは黙って聞き直す
+      // 指が離れていない限りは黙って聞き直す
       if (listening && !stopRequested) {
         try {
           recognition.start();
@@ -528,33 +519,55 @@
       if (listening) finishListening();
     };
 
-    micButton.addEventListener('click', function() {
+    function startHold() {
       if (!currentConfig) {
         showSetupPanel();
         return;
       }
-      if (listening) {
-        // 話し終わったら待たずに送れるように、タップで確定できるようにしておく
-        stopRequested = true;
-        try { recognition.stop(); } catch (err) { console.warn(err); }
-        return;
-      }
+      if (listening) return;
       hideResult();
       finalText = '';
       stopRequested = false;
       listening = true;
       micButton.classList.add('listening');
-      setStatus('聞き取り中...（話し終わったらタップ）');
+      setStatus('聞き取り中...（離すと送信）');
       try {
         recognition.start();
-        armSilenceTimer();
+        holdTimer = setTimeout(endHold, MAX_HOLD_MS);
       } catch (err) {
         console.error(err);
         listening = false;
         micButton.classList.remove('listening');
         setStatus('音声認識を開始できませんでした。');
       }
+    }
+
+    function endHold() {
+      if (!listening) return;
+      clearTimeout(holdTimer);
+      stopRequested = true;
+      // stop() の後に onend が来て finishListening() が走り、そこで送信される
+      try {
+        recognition.stop();
+      } catch (err) {
+        console.warn(err);
+        finishListening();
+      }
+    }
+
+    // 押している間だけ録る。pointer系でマウスとタッチをまとめて扱う
+    micButton.addEventListener('pointerdown', function(event) {
+      event.preventDefault();
+      startHold();
     });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(name) {
+      micButton.addEventListener(name, function(event) {
+        event.preventDefault();
+        endHold();
+      });
+    });
+    // 長押しでコンテキストメニューが出ると指を離すイベントを取り逃がす
+    micButton.addEventListener('contextmenu', function(event) { event.preventDefault(); });
   }
 
   textSubmit.addEventListener('click', function() {
@@ -577,7 +590,7 @@
   conversationReset.addEventListener('click', function() {
     clearConversation();
     hideResult();
-    setStatus('タップして話しかけてください');
+    setStatus(IDLE_STATUS);
   });
 
   if (!window.isSecureContext) {
