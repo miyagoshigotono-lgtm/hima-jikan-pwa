@@ -19,5 +19,8 @@ var CONFIG = {
   AUTO_SLOT_END_HOUR: 22,           // 探索上限（暇時間帯ルールの終端と揃える）
 
   // 「大ちゃんと遊ぶ予定を消して」のように日付を言わずに削除するときの探索範囲
-  DELETE_SEARCH_DAYS: 90
+  DELETE_SEARCH_DAYS: 90,
+
+  // 聞き返しをまたいで引き継ぐ会話の最大メッセージ数
+  MAX_HISTORY_MESSAGES: 10
 };

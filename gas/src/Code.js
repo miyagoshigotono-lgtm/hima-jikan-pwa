@@ -35,7 +35,7 @@ function doPost(e) {
     if (!sharedSecret || body.secret !== sharedSecret) {
       return jsonOutput({status: 'error', message: '認証エラー'});
     }
-    return jsonOutput(handleRequest(body.transcript));
+    return jsonOutput(handleRequest(body.transcript, body.history));
   } catch (err) {
     console.error(err);
     return jsonOutput({status: 'error', message: 'サーバーでエラーが発生しました。時間をおいて再度お試しください。'});
@@ -46,15 +46,29 @@ function jsonOutput(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function handleRequest(transcript) {
+// history はPWA側が保持している直前までのやりとり。
+// 「13日に予定入れたい」→「何の予定？」→「大ちゃんと遊ぶを12時に」を一続きとして解釈させるために渡す
+function buildTurns(history, transcript) {
+  var turns = (history || [])
+    .filter(function(m) { return m && m.text; })
+    .slice(-CONFIG.MAX_HISTORY_MESSAGES)
+    .map(function(m) {
+      return {role: m.role === 'model' ? 'model' : 'user', text: String(m.text)};
+    });
+  turns.push({role: 'user', text: transcript});
+  return turns;
+}
+
+function handleRequest(transcript, history) {
   if (!transcript || !transcript.trim()) {
     return {status: 'clarify', message: '発話内容が空でした。もう一度お話しください。'};
   }
 
+  var turns = buildTurns(history, transcript);
   var todayIso = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
   var extraction;
   try {
-    extraction = IntentService.classifyAndExtract(transcript, todayIso);
+    extraction = IntentService.classifyAndExtract(turns, todayIso);
   } catch (err) {
     console.error(err);
     return {status: 'error', message: '音声内容の解析に失敗しました。もう一度お試しください。'};
@@ -79,11 +93,11 @@ function handleRequest(transcript) {
   }
 
   if (extraction.intent === 'delete_event') {
-    return handleDeleteEvent(extraction.deleteEvent || {}, transcript);
+    return handleDeleteEvent(extraction.deleteEvent || {}, turns);
   }
 
   if (extraction.intent === 'update_event') {
-    return handleUpdateEvent(extraction.updateEvent || {}, transcript);
+    return handleUpdateEvent(extraction.updateEvent || {}, turns);
   }
 
   if (extraction.intent === 'query_free_evenings') {
@@ -191,7 +205,7 @@ function handleAddEvent(fields) {
 
 // 削除・変更で共通の「どの予定を指しているか」の特定。
 // 特定できたら {event, label} を、できなければそのまま返せる {response} を返す
-function resolveTargetEvent(fields, transcript, type, actionNoun) {
+function resolveTargetEvent(fields, turns, type, actionNoun) {
   var todayIso = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
   var searchFrom = fields.date || todayIso;
   var searchTo = fields.date ? addDays(fields.date, 1) : addDays(todayIso, CONFIG.DELETE_SEARCH_DAYS);
@@ -220,7 +234,7 @@ function resolveTargetEvent(fields, transcript, type, actionNoun) {
 
   var index;
   try {
-    index = IntentService.pickTargetEvent(transcript, labels);
+    index = IntentService.pickTargetEvent(turns, labels);
   } catch (err) {
     console.error(err);
     return {response: {status: 'error', message: '対象の予定の特定に失敗しました。もう一度お試しください。'}};
@@ -237,8 +251,8 @@ function resolveTargetEvent(fields, transcript, type, actionNoun) {
 }
 
 // 確認を挟まず即削除する。ただし発話がどれを指すか特定できない場合だけは候補を返して聞き直してもらう
-function handleDeleteEvent(fields, transcript) {
-  var resolved = resolveTargetEvent(fields, transcript, 'delete_event', '削除');
+function handleDeleteEvent(fields, turns) {
+  var resolved = resolveTargetEvent(fields, turns, 'delete_event', '削除');
   if (resolved.response) return resolved.response;
 
   try {
@@ -251,8 +265,8 @@ function handleDeleteEvent(fields, transcript) {
   return {status: 'ok', type: 'delete_event', message: resolved.label + ' を削除しました。'};
 }
 
-function handleUpdateEvent(fields, transcript) {
-  var resolved = resolveTargetEvent(fields, transcript, 'update_event', '変更');
+function handleUpdateEvent(fields, turns) {
+  var resolved = resolveTargetEvent(fields, turns, 'update_event', '変更');
   if (resolved.response) return resolved.response;
 
   var target = resolved.event;

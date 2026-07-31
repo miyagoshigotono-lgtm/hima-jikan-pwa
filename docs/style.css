@@ -384,6 +384,25 @@ h1 {
   cursor: pointer;
 }
 
+.conversation-hint {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: #b7791f;
+}
+
+.conversation-reset {
+  padding: 3px 10px;
+  border: 1px solid #d69e2e;
+  border-radius: 10px;
+  background: white;
+  color: #b7791f;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
 .retry-button {
   margin-top: 12px;
   padding: 8px 16px;

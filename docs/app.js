@@ -21,12 +21,19 @@
   var calPrev = document.getElementById('calPrev');
   var calNext = document.getElementById('calNext');
   var dayDetail = document.getElementById('dayDetail');
+  var conversationHint = document.getElementById('conversationHint');
+  var conversationReset = document.getElementById('conversationReset');
 
   var currentConfig = loadConfig();
   var speechSupported = true;
   var calViewYear, calViewMonth;
   var gridRangeStart, gridRangeEnd;
   var monthData = {dayOffSet: {}, eventsByDate: {}};
+  // 聞き返しをまたいで文脈を保つための会話履歴。用が済んだら捨てる
+  var conversation = [];
+  var conversationAt = 0;
+  var MAX_HISTORY = 10;
+  var CONVERSATION_TTL_MS = 3 * 60 * 1000;
   var selectedDate = null;
   var WEEKDAY_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -82,6 +89,7 @@
     textFallback.style.display = 'none';
     settingsButton.style.display = 'none';
     hideResult();
+    clearConversation();
     setStatus('');
     setupError.textContent = '';
     if (currentConfig) {
@@ -350,10 +358,32 @@
     window.speechSynthesis.speak(utterance);
   }
 
+  function clearConversation() {
+    conversation = [];
+    conversationAt = 0;
+    conversationHint.style.display = 'none';
+  }
+
+  // 聞き返しの往復だけを引き継ぐ。用が済んだ（ok/rejected/error）時点で捨てる
+  function continueConversation(transcript, reply) {
+    conversation.push({role: 'user', text: transcript});
+    conversation.push({role: 'model', text: reply});
+    if (conversation.length > MAX_HISTORY) {
+      conversation = conversation.slice(-MAX_HISTORY);
+    }
+    conversationAt = Date.now();
+    conversationHint.style.display = 'flex';
+  }
+
   function sendToBackend(transcript) {
     if (!currentConfig) {
       showSetupPanel();
       return;
+    }
+
+    // 前の会話から時間が空いていたら別件とみなす
+    if (conversation.length && Date.now() - conversationAt > CONVERSATION_TTL_MS) {
+      clearConversation();
     }
 
     setStatus('送信中...');
@@ -366,13 +396,25 @@
       method: 'POST',
       // GASのCORSプリフライト回避のため text/plain で送る（JSON文字列はそのままbodyに入れる）
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({transcript: transcript, secret: currentConfig.SHARED_SECRET}),
+      body: JSON.stringify({
+        transcript: transcript,
+        history: conversation,
+        secret: currentConfig.SHARED_SECRET
+      }),
       signal: controller.signal
     })
       .then(function(res) { return res.json(); })
       .then(function(data) {
         clearTimeout(timeoutId);
         setStatus('タップして話しかけてください');
+        if (data.status === 'clarify') {
+          continueConversation(transcript, data.message);
+          showResult('clarify', data.message);
+          speak(data.message);
+          return;
+        }
+
+        clearConversation();
         if (data.status === 'ok') {
           showResult('ok', data.message);
           speak(data.message);
@@ -383,8 +425,6 @@
         } else if (data.status === 'rejected') {
           showResult('rejected', data.message);
           speak(data.message);
-        } else if (data.status === 'clarify') {
-          showResult('clarify', data.message);
         } else {
           showResult('error', data.message || '不明なエラーが発生しました。');
         }
@@ -393,6 +433,7 @@
         clearTimeout(timeoutId);
         setStatus('タップして話しかけてください');
         console.error(err);
+        clearConversation();
         showResult('error', 'サーバーとの通信に失敗しました。もう一度お試しください。');
       });
   }
@@ -473,6 +514,12 @@
 
   retryButton.addEventListener('click', function() {
     hideResult();
+  });
+
+  conversationReset.addEventListener('click', function() {
+    clearConversation();
+    hideResult();
+    setStatus('タップして話しかけてください');
   });
 
   if (!window.isSecureContext) {
