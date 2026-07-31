@@ -129,8 +129,9 @@ function handleAddEvent(fields) {
 
   if (fields.startTime) {
     startMin = parseHhMm(fields.startTime);
-    endMin = fields.endTime ? parseHhMm(fields.endTime) : startMin + duration;
-    if (endMin <= startMin) endMin = startMin + duration;
+    endMin = fields.endTime
+      ? normalizeEndMinutes(startMin, parseHhMm(fields.endTime), duration)
+      : startMin + duration;
 
     var conflicts = Scheduling.findConflicts(isDayOff, dayEvents, startMin, endMin);
     if (conflicts.work) {
@@ -197,11 +198,7 @@ function resolveTargetEvent(fields, transcript, type, actionNoun) {
 
   var candidates;
   try {
-    candidates = CalendarService.findTimedEvents(
-      parseIsoDate(searchFrom),
-      parseIsoDate(searchTo),
-      fields.startTime
-    );
+    candidates = CalendarService.findTimedEvents(parseIsoDate(searchFrom), parseIsoDate(searchTo));
   } catch (err) {
     console.error(err);
     return {response: {status: 'error', message: 'カレンダーの取得に失敗しました。もう一度お試しください。'}};
@@ -272,15 +269,9 @@ function handleUpdateEvent(fields, transcript) {
 
   var newDate = fields.newDate || originalDate;
   var startMin = fields.newStartTime ? parseHhMm(fields.newStartTime) : originalStart;
-  var endMin;
-  if (fields.newEndTime) {
-    endMin = parseHhMm(fields.newEndTime);
-  } else if (fields.newStartTime) {
-    endMin = startMin + originalDuration; // 開始だけずらした場合は所要時間を保つ
-  } else {
-    endMin = startMin + originalDuration;
-  }
-  if (endMin <= startMin) endMin = startMin + CONFIG.DEFAULT_EVENT_DURATION_MIN;
+  var endMin = fields.newEndTime
+    ? normalizeEndMinutes(startMin, parseHhMm(fields.newEndTime), CONFIG.DEFAULT_EVENT_DURATION_MIN)
+    : startMin + originalDuration; // 終了を言われなければ元の所要時間を保つ
 
   if (timeChanged) {
     var isDayOff, others;

@@ -18,25 +18,48 @@ var IntentService = {
       '意図、または必須項目（予定追加ならタイトルと日付、照会なら対象期間）が発話から確実に読み取れない場合は、' +
       '無理に推測せず intent を "unclear" とし、clarificationNeeded に確認したい内容を日本語の質問文で書いてください。\n' +
       '\n' +
+      '【時刻の解釈】これは特に重要です\n' +
+      '日本語の口語的な時刻表現を必ず24時間制の "HH:mm" に変換してください。\n' +
+      '  「夜の9時」「夜9時」「21時」 → "21:00"\n' +
+      '  「朝7時」「午前7時」 → "07:00"\n' +
+      '  「昼の12時」「正午」 → "12:00"\n' +
+      '  「午後3時」「昼の3時」 → "15:00"\n' +
+      '  「夕方6時」 → "18:00"\n' +
+      '  「深夜1時」 → "01:00"\n' +
+      '「ごろ」「くらい」「あたり」「なんとなく」のような曖昧さを表す語が付いていても、' +
+      '時刻が述べられている限り必ず埋めてください。曖昧さを理由に null にしてはいけません。\n' +
+      '「AからBまで」のように範囲が述べられている場合は開始と終了の両方を埋めてください。\n' +
+      '  例:「昼の12時から夜の9時まで」→ 開始="12:00", 終了="21:00"\n' +
+      '  例:「8月13日夜の9時ごろに流星群を見る」→ 開始="21:00"\n' +
+      '時刻を null にしてよいのは、発話に時刻が一切現れない場合だけです。\n' +
+      '  例:「金曜日に大ちゃんと遊ぶ」→ 開始=null, 終了=null\n' +
+      '\n' +
       '【予定追加の重要な注意】\n' +
       'date は yyyy-MM-dd 形式で必ず埋めてください。\n' +
-      'startTime / endTime は "HH:mm" 形式ですが、発話に時刻が含まれていない場合は必ず null にしてください。' +
-      '時刻を勝手に補完してはいけません（時刻が null のときは、システム側が空いている時間を自動で割り当てます）。\n' +
+      'startTime / endTime は上の【時刻の解釈】に従ってください。' +
+      '発話に時刻が無い場合だけ null にします（その場合はシステム側が空き時間を自動で割り当てます）。\n' +
       '\n' +
       '【照会の重要な注意】\n' +
       'periodStart / periodEnd は yyyy-MM-dd 形式（両端含む）で出力してください。\n' +
       'query_free_evenings で「平日で」「仕事終わりで」のように休日を除いて聞かれている場合は excludeDayOff を true にしてください。\n' +
       '\n' +
       '【予定削除の重要な注意】\n' +
-      'date は発話に日付が含まれる場合のみ yyyy-MM-dd で埋め、含まれない場合は null にしてください。\n' +
-      'startTime も発話に時刻が含まれる場合のみ "HH:mm" で埋めてください。\n' +
+      'date は発話に「その予定が今入っている日付」が含まれる場合のみ yyyy-MM-dd で埋め、含まれない場合は null にしてください。\n' +
       '\n' +
-      '【予定変更の重要な注意】\n' +
-      'updateEvent では「どの予定か」と「何に変えるか」を区別してください。\n' +
-      'date / startTime は変更対象を絞り込むための現在の値です（発話に含まれる場合のみ埋める）。\n' +
-      'newDate / newStartTime / newEndTime / newTitle が変更後の値です。変更しない項目は必ず null にしてください。\n' +
-      '例:「大ちゃんと遊ぶ予定を18〜22時に変更」→ date=null, newStartTime="18:00", newEndTime="22:00"\n' +
-      '例:「8月1日の会食を8月3日に移動」→ date="2026-08-01", newDate="2026-08-03", newStartTime=null';
+      '【予定変更の重要な注意】これは特に重要です\n' +
+      'updateEvent では「どの予定を変えるか」と「何に変えるか」を厳密に区別してください。\n' +
+      '  date        = その予定が【今】入っている日付。対象を探すための条件。\n' +
+      '  newDate / newStartTime / newEndTime / newTitle = 【変更後】の値。\n' +
+      '「〜に変更」「〜にして」「〜に移動」「〜に変えて」の直前で述べられた日時は、' +
+      '対象を探す条件ではなく必ず【変更後】の値です。new... 側に入れてください。\n' +
+      '変更しない項目は必ず null にしてください。\n' +
+      '例:「流星群を見る予定を21時から22時に変更して」\n' +
+      '  → date=null, newStartTime="21:00", newEndTime="22:00"\n' +
+      '    （21時・22時は変更後の時刻です。対象を探す条件ではありません）\n' +
+      '例:「大ちゃんと遊ぶ予定を18〜22時に変更」\n' +
+      '  → date=null, newStartTime="18:00", newEndTime="22:00"\n' +
+      '例:「8月1日の会食を8月3日に移動」\n' +
+      '  → date="2026-08-01", newDate="2026-08-03", newStartTime=null, newEndTime=null';
 
     var responseSchema = {
       type: 'OBJECT',
@@ -85,8 +108,7 @@ var IntentService = {
           type: 'OBJECT',
           nullable: true,
           properties: {
-            date: {type: 'STRING', nullable: true},
-            startTime: {type: 'STRING', nullable: true}
+            date: {type: 'STRING', nullable: true}
           }
         },
         updateEvent: {
@@ -94,7 +116,6 @@ var IntentService = {
           nullable: true,
           properties: {
             date: {type: 'STRING', nullable: true},
-            startTime: {type: 'STRING', nullable: true},
             newDate: {type: 'STRING', nullable: true},
             newStartTime: {type: 'STRING', nullable: true},
             newEndTime: {type: 'STRING', nullable: true},

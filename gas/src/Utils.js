@@ -34,6 +34,14 @@ function minutesToDate(dateStr, minutes) {
   return toTokyoDate(dateStr, Math.floor(minutes / 60), minutes % 60);
 }
 
+// 終了が開始より前なら日をまたぐ指定とみなす（「23時から1時まで」等）。
+// 同時刻なら指定ミスとみなして既定の所要時間を使う
+function normalizeEndMinutes(startMin, endMin, fallbackDuration) {
+  if (endMin < startMin) return endMin + 24 * 60;
+  if (endMin === startMin) return startMin + fallbackDuration;
+  return endMin;
+}
+
 function formatMinutes(minutes) {
   var hh = Math.floor(minutes / 60) % 24;
   var mm = minutes % 60;
