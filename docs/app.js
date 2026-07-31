@@ -1,6 +1,9 @@
 (function() {
   var STORAGE_KEY = 'himajikanConfig';
   var REQUEST_TIMEOUT_MS = 25000;
+  // 話が途切れてからこれだけ無音が続いたら喋り終わったとみなす。
+  // 短いと言い淀んだだけで打ち切られるので長めに取る
+  var SILENCE_TIMEOUT_MS = 3500;
 
   var micButton = document.getElementById('micButton');
   var statusEl = document.getElementById('status');
@@ -448,31 +451,81 @@
 
     var recognition = new SpeechRecognitionImpl();
     recognition.lang = 'ja-JP';
-    recognition.interimResults = false;
+    // continuous を立てないと、ひと区切りの短い無音で勝手に打ち切られる
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     var listening = false;
+    var stopRequested = false; // 自分で止めたのか、勝手に切れたのかの区別
+    var finalText = '';
+    var silenceTimer = null;
+
+    function armSilenceTimer() {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(function() {
+        stopRequested = true;
+        try { recognition.stop(); } catch (err) { console.warn(err); }
+      }, SILENCE_TIMEOUT_MS);
+    }
+
+    function finishListening() {
+      clearTimeout(silenceTimer);
+      listening = false;
+      micButton.classList.remove('listening');
+      var text = finalText.trim();
+      finalText = '';
+      if (text) {
+        sendToBackend(text);
+      } else {
+        setStatus('聞き取れませんでした。もう一度お試しください');
+      }
+    }
 
     recognition.onresult = function(event) {
-      var transcript = event.results[0][0].transcript;
-      sendToBackend(transcript);
+      var interim = '';
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var result = event.results[i];
+        if (result.isFinal) {
+          finalText += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      setStatus((finalText + interim) || '聞き取り中...');
+      armSilenceTimer();
     };
 
     recognition.onerror = function(event) {
+      // continuous では無音のたびに no-speech が来る。止めずに聞き続ける
+      if (event.error === 'no-speech') return;
+
+      clearTimeout(silenceTimer);
+      stopRequested = true;
       listening = false;
       micButton.classList.remove('listening');
-      if (event.error === 'no-speech') {
-        setStatus('聞き取れませんでした。もう一度お試しください');
-      } else if (event.error === 'not-allowed') {
+      if (event.error === 'not-allowed') {
         setStatus('マイクの使用が許可されていません。');
+      } else if (event.error === 'aborted') {
+        setStatus('タップして話しかけてください');
       } else {
+        console.error(event.error);
         setStatus('音声認識でエラーが発生しました。もう一度お試しください');
       }
     };
 
     recognition.onend = function() {
-      listening = false;
-      micButton.classList.remove('listening');
+      // Android Chrome は continuous でも勝手に終わることがあるので、
+      // こちらから止めていない限りは黙って聞き直す
+      if (listening && !stopRequested) {
+        try {
+          recognition.start();
+          return;
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+      if (listening) finishListening();
     };
 
     micButton.addEventListener('click', function() {
@@ -481,15 +534,20 @@
         return;
       }
       if (listening) {
-        recognition.stop();
+        // 話し終わったら待たずに送れるように、タップで確定できるようにしておく
+        stopRequested = true;
+        try { recognition.stop(); } catch (err) { console.warn(err); }
         return;
       }
       hideResult();
+      finalText = '';
+      stopRequested = false;
       listening = true;
       micButton.classList.add('listening');
-      setStatus('聞き取り中...');
+      setStatus('聞き取り中...（話し終わったらタップ）');
       try {
         recognition.start();
+        armSilenceTimer();
       } catch (err) {
         console.error(err);
         listening = false;
