@@ -76,6 +76,8 @@
 
   function setStatus(text) {
     statusEl.textContent = text;
+    // 高さは固定なので、伸びた文字起こしは末尾（最新の発話）が見えるようにする
+    statusEl.scrollTop = statusEl.scrollHeight;
   }
 
   function showResult(kind, message) {
@@ -556,15 +558,17 @@
 
     var listening = false;
     var stopRequested = false; // 自分で止めたのか、勝手に切れたのかの区別
-    var finalText = '';
+    var committedText = '';    // 途中で再開をまたいで確定した分
+    var sessionText = '';      // いま動いている認識セッションで確定した分
     var holdTimer = null;
 
     function finishListening() {
       clearTimeout(holdTimer);
       listening = false;
       micButton.classList.remove('listening');
-      var text = finalText.trim();
-      finalText = '';
+      var text = (committedText + sessionText).trim();
+      committedText = '';
+      sessionText = '';
       if (text) {
         sendToBackend(text);
       } else {
@@ -573,16 +577,19 @@
     }
 
     recognition.onresult = function(event) {
+      var finals = '';
       var interim = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) {
+      for (var i = 0; i < event.results.length; i++) {
         var result = event.results[i];
         if (result.isFinal) {
-          finalText += result[0].transcript;
+          finals += result[0].transcript;
         } else {
           interim += result[0].transcript;
         }
       }
-      setStatus((finalText + interim) || '聞き取り中...');
+      // 同じ確定結果が何度も配信されることがあるので、足し込まず毎回組み立て直す
+      sessionText = finals;
+      setStatus((committedText + sessionText + interim) || '聞き取り中...');
     };
 
     recognition.onerror = function(event) {
@@ -607,6 +614,9 @@
       // Android Chrome は continuous でも勝手に終わることがあるので、
       // 指が離れていない限りは黙って聞き直す
       if (listening && !stopRequested) {
+        // 再開すると results が空に戻るので、ここまでの確定分を退避しておく
+        committedText += sessionText;
+        sessionText = '';
         try {
           recognition.start();
           return;
@@ -624,7 +634,8 @@
       }
       if (listening) return;
       hideResult();
-      finalText = '';
+      committedText = '';
+      sessionText = '';
       stopRequested = false;
       listening = true;
       micButton.classList.add('listening');
@@ -656,9 +667,14 @@
     // 押している間だけ録る。pointer系でマウスとタッチをまとめて扱う
     micButton.addEventListener('pointerdown', function(event) {
       event.preventDefault();
+      // 指が少しずれただけで離したと判定されないよう、ポインタをボタンに固定する。
+      // 固定すると pointerleave は飛ばないので、終了は pointerup / pointercancel だけを見る
+      if (micButton.setPointerCapture) {
+        try { micButton.setPointerCapture(event.pointerId); } catch (err) { console.warn(err); }
+      }
       startHold();
     });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(name) {
+    ['pointerup', 'pointercancel'].forEach(function(name) {
       micButton.addEventListener(name, function(event) {
         event.preventDefault();
         endHold();
